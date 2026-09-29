@@ -1,0 +1,37 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Golden Harvest Wheat Arc (Right) -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M54,30 C58,34 66,35 68,43 C70,51 64,57 60,63 C58,66 56,71 54,78 C54,78 57,69 63,64 C69,59 74,51 72,41 C70,31 60,26 54,30 Z" />
+    <path
+        android:fillColor="#FBBF24"
+        android:pathData="M54,38 C57,41 62,42 63,47 C64,52 61,56 58,60 C57,62 55,66 54,70 C54,70 56,64 60,60 C64,56 67,51 66,45 C65,39 58,35 54,38 Z" />
+
+    <!-- Emerald Sprout Leaf (Left) -->
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M54,78 C54,70 48,63 42,58 C36,53 34,44 38,36 C42,28 51,30 54,33 C54,33 46,36 44,43 C42,50 46,57 52,64 C53,66 54,72 54,78 Z" />
+    <path
+        android:fillColor="#10B981"
+        android:pathData="M54,72 C54,66 49,60 45,56 C41,52 40,46 43,40 C45,35 51,36 54,38 C54,38 48,41 47,46 C46,51 49,56 53,62 C53,64 54,68 54,72 Z" />
+
+    <!-- Central Connectivity Node / Seed -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,28 A4,4 0 1,1 54,20 A4,4 0 1,1 54,28 Z" />
+    <path
+        android:fillColor="#34D399"
+        android:pathData="M54,26 A2,2 0 1,1 54,22 A2,2 0 1,1 54,26 Z" />
+
+    <!-- Center Stem -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M54,30 L54,82" />
+</vector>
