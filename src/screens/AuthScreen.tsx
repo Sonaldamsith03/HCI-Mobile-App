@@ -15,6 +15,7 @@ import {
   Alert,
   Modal,
   Image,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -119,6 +120,12 @@ export const AuthScreen: React.FC = () => {
       }),
     ]).start();
   }, [authMode, selectedRole]);
+
+  useEffect(() => {
+    if (showGoogleModal && email && !customGoogleEmail) {
+      setCustomGoogleEmail(email.trim());
+    }
+  }, [showGoogleModal, email]);
 
   // Quick Demo Logins
   const handleQuickDemo = async (role: 'BUYER' | 'FARMER' | 'COURIER' | 'ADMIN') => {
@@ -229,33 +236,76 @@ export const AuthScreen: React.FC = () => {
     }
   };
 
-  // Custom Google Account submission
-  const handleCustomGoogleSubmit = () => {
-    if (!customGoogleEmail.trim() || !customGoogleEmail.includes('@')) {
-      showToast('Please enter a valid Google email address', 'warn');
+  // Google Continue Button on main screen
+  const handleContinueWithGoogle = async () => {
+    // 1. If user already typed an email into the input field:
+    const cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail && cleanEmail.includes('@')) {
+      await handleSelectGoogleAccount({
+        name: fullName.trim() || cleanEmail.split('@')[0],
+        email: cleanEmail,
+      });
       return;
     }
-    const derivedName = customGoogleName.trim() || customGoogleEmail.split('@')[0];
+
+    // 2. Launch Google Browser OAuth with the credentials configured
+    setIsLoading(true);
+    const { data, error } = await supabaseService.signInWithGoogleOAuth();
+    setIsLoading(false);
+
+    if (!error && data?.url) {
+      try {
+        const canOpen = await Linking.canOpenURL(data.url).catch(() => false);
+        if (canOpen) {
+          await Linking.openURL(data.url);
+          showToast('Opening Google Sign-In...', 'info');
+          return;
+        }
+      } catch (err) {
+        console.warn('Linking error:', err);
+      }
+    }
+
+    // 3. Fallback: Open Google Account selector modal smoothly
+    setCustomGoogleEmail(email || '');
+    setShowGoogleModal(true);
+  };
+
+  // Custom Google Account submission from modal
+  const handleCustomGoogleSubmit = () => {
+    const candidateEmail = (customGoogleEmail.trim() || email.trim()).toLowerCase();
+    if (!candidateEmail || !candidateEmail.includes('@')) {
+      showToast('Please enter your Google email address (e.g. name@gmail.com)', 'warn');
+      return;
+    }
+    const derivedName = customGoogleName.trim() || fullName.trim() || candidateEmail.split('@')[0];
     handleSelectGoogleAccount({
       name: derivedName,
-      email: customGoogleEmail.trim().toLowerCase(),
+      email: candidateEmail,
       avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
     });
   };
 
-  // Live Supabase OAuth via Browser
+  // Live Supabase OAuth via Browser from modal
   const handleBrowserGoogleOAuth = async () => {
     setIsLoading(true);
     setShowGoogleModal(false);
-    const { error } = await supabaseService.signInWithGoogleOAuth();
+    const { data, error } = await supabaseService.signInWithGoogleOAuth();
     setIsLoading(false);
     if (error) {
       Alert.alert(
         'Google OAuth Notice',
-        `${error}\n\nTip: To use live browser redirection, configure your Google Cloud Client ID & Secret in Supabase Dashboard -> Authentication -> Providers -> Google.`
+        `${error}\n\nTip: Google Client ID & Secret must be enabled in Supabase Authentication -> Providers -> Google.`
       );
+    } else if (data?.url) {
+      try {
+        await Linking.openURL(data.url);
+        showToast('Opening Google Authorization...', 'info');
+      } catch (e: any) {
+        Alert.alert('Browser Open Error', e.message || 'Could not open browser');
+      }
     } else {
-      showToast('Opening Google Authorization...', 'info');
+      showToast('OAuth initiated', 'info');
     }
   };
 
@@ -570,6 +620,29 @@ export const AuthScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
+            {/* Google Sign In Direct Option */}
+            <TouchableOpacity
+              style={[styles.googleContinueBtn, isDark ? styles.googleBtnDark : styles.googleBtnLight]}
+              onPress={handleContinueWithGoogle}
+              activeOpacity={0.85}
+            >
+              <View style={styles.googleIconBadge}>
+                <Ionicons name="logo-google" size={18} color="#EA4335" />
+              </View>
+              <Text style={[styles.googleContinueText, isDark && { color: '#FFFFFF' }]}>
+                Continue with Google
+              </Text>
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.orDividerRow}>
+              <View style={[styles.orDividerLine, isDark && styles.orLineDark]} />
+              <Text style={[styles.orDividerText, isDark && { color: '#71717A' }]}>
+                OR WITH EMAIL
+              </Text>
+              <View style={[styles.orDividerLine, isDark && styles.orLineDark]} />
+            </View>
+
             {/* Primary Form Inputs Container */}
             <View style={[styles.card, isDark && styles.cardDark]}>
               <View style={styles.formHeaderRow}>
@@ -585,7 +658,7 @@ export const AuthScreen: React.FC = () => {
                   <Text style={styles.formHeaderSub}>
                     {authMode === 'login'
                       ? 'Use your personal email and password to access your account'
-                      : `Enter your own email to register as a ${selectedRole === 'COURIER' ? 'Driver' : selectedRole === 'FARMER' ? 'Farmer' : 'Buyer'}`}
+                      : `Enter your details to register as a ${selectedRole === 'COURIER' ? 'Driver' : selectedRole === 'FARMER' ? 'Farmer' : 'Buyer'}`}
                   </Text>
                 </View>
               </View>
@@ -810,34 +883,26 @@ export const AuthScreen: React.FC = () => {
               )}
             </View>
 
-            {/* Divider */}
-            <View style={styles.orDividerRow}>
-              <View style={[styles.orDividerLine, isDark && styles.orLineDark]} />
-              <Text style={[styles.orDividerText, isDark && { color: '#71717A' }]}>
-                OR CONTINUE WITH
+            {/* Switch Auth Mode Prompt */}
+            <View style={styles.switchModeContainer}>
+              <Text style={[styles.switchModeText, isDark && { color: '#94A3B8' }]}>
+                {authMode === 'login' ? "Don't have an account?" : 'Already have an account?'}
               </Text>
-              <View style={[styles.orDividerLine, isDark && styles.orLineDark]} />
+              <TouchableOpacity
+                onPress={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+                style={{ marginLeft: 6 }}
+              >
+                <Text style={styles.switchModeLink}>
+                  {authMode === 'login' ? 'Create Account' : 'Sign In'}
+                </Text>
+              </TouchableOpacity>
             </View>
-
-            {/* Google Sign In Direct Option */}
-            <TouchableOpacity
-              style={[styles.googleContinueBtn, isDark ? styles.googleBtnDark : styles.googleBtnLight]}
-              onPress={() => setShowGoogleModal(true)}
-              activeOpacity={0.85}
-            >
-              <View style={styles.googleIconBadge}>
-                <Ionicons name="logo-google" size={18} color="#EA4335" />
-              </View>
-              <Text style={[styles.googleContinueText, isDark && { color: '#FFFFFF' }]}>
-                Continue with Google
-              </Text>
-            </TouchableOpacity>
 
             {/* Quick 1-Tap Demo Logins Strip */}
             <View style={styles.demoSection}>
               <View style={styles.dividerRow}>
                 <View style={[styles.dividerLine, isDark && { backgroundColor: '#27272A' }]} />
-                <Text style={[styles.dividerText, isDark && { color: '#71717A' }]}>OR QUICK DEMO LOGIN</Text>
+                <Text style={[styles.dividerText, isDark && { color: '#71717A' }]}>QUICK DEMO ACCESS</Text>
                 <View style={[styles.dividerLine, isDark && { backgroundColor: '#27272A' }]} />
               </View>
 
@@ -907,22 +972,45 @@ export const AuthScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
-              {/* Custom Google Account Box (Always visible at top) */}
-              <View style={[styles.customGoogleBox, isDark && styles.customGoogleBoxDark]}>
-                <Text style={[styles.customGoogleTitle, isDark && { color: '#FFFFFF' }]}>
-                  Enter Your Google Account Email
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+              {/* Primary: Live Official Google OAuth Button */}
+              <TouchableOpacity
+                style={[styles.primaryOAuthBtn, isDark && styles.primaryOAuthBtnDark]}
+                onPress={handleBrowserGoogleOAuth}
+                activeOpacity={0.88}
+              >
+                <View style={styles.googleIconBadge}>
+                  <Ionicons name="logo-google" size={20} color="#EA4335" />
+                </View>
+                <Text style={[styles.primaryOAuthBtnText, isDark && { color: '#FFFFFF' }]}>
+                  Launch Official Google Sign-In
                 </Text>
+                <Ionicons name="open-outline" size={16} color="#06C167" />
+              </TouchableOpacity>
+
+              {/* Divider */}
+              <View style={{ marginVertical: 14 }}>
+                <View style={styles.dividerRow}>
+                  <View style={[styles.dividerLine, isDark && { backgroundColor: '#27272A' }]} />
+                  <Text style={[styles.dividerText, isDark && { color: '#71717A' }]}>
+                    OR SIGN IN WITH ANY GMAIL
+                  </Text>
+                  <View style={[styles.dividerLine, isDark && { backgroundColor: '#27272A' }]} />
+                </View>
+              </View>
+
+              {/* Custom Google Account Box */}
+              <View style={[styles.customGoogleBox, isDark && styles.customGoogleBoxDark]}>
                 <TextInput
                   style={[styles.customInput, isDark && styles.customInputDark]}
-                  placeholder="Your Name (e.g. John Doe)"
+                  placeholder="Your Full Name (optional)"
                   placeholderTextColor="#71717A"
                   value={customGoogleName}
                   onChangeText={setCustomGoogleName}
                 />
                 <TextInput
                   style={[styles.customInput, isDark && styles.customInputDark]}
-                  placeholder="your.email@gmail.com"
+                  placeholder={email || "your.email@gmail.com"}
                   placeholderTextColor="#71717A"
                   value={customGoogleEmail}
                   onChangeText={setCustomGoogleEmail}
@@ -932,15 +1020,16 @@ export const AuthScreen: React.FC = () => {
                 <TouchableOpacity
                   style={styles.customSubmitBtn}
                   onPress={handleCustomGoogleSubmit}
+                  activeOpacity={0.85}
                 >
-                  <Text style={styles.customSubmitText}>Continue with My Google Email</Text>
+                  <Text style={styles.customSubmitText}>Sync & Sign In with This Email</Text>
                 </TouchableOpacity>
               </View>
 
               {/* Demo Profiles Subtitle */}
-              <View style={{ marginVertical: 12, paddingHorizontal: 4 }}>
+              <View style={{ marginVertical: 14, paddingHorizontal: 4 }}>
                 <Text style={[styles.sectionLabel, { fontSize: 11, marginBottom: 8 }, isDark && { color: '#9CA3AF' }]}>
-                  OR CHOOSE A TEST GOOGLE PROFILE
+                  OR SELECT A VERIFIED TEST PROFILE
                 </Text>
               </View>
 
@@ -964,17 +1053,6 @@ export const AuthScreen: React.FC = () => {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-
-            {/* Live Browser OAuth Option */}
-            <View style={styles.googleModalFooter}>
-              <TouchableOpacity
-                style={[styles.browserOAuthBtn, isDark && styles.browserOAuthBtnDark]}
-                onPress={handleBrowserGoogleOAuth}
-              >
-                <Ionicons name="open-outline" size={16} color="#3B82F6" />
-                <Text style={styles.browserOAuthText}>Launch Supabase Browser OAuth</Text>
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </Modal>
@@ -1509,10 +1587,52 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingVertical: 10,
   },
-  browserOAuthBtnDark: {},
   browserOAuthText: {
     fontSize: 12.5,
     fontWeight: '700',
     color: '#3B82F6',
+  },
+  switchModeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  switchModeText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  switchModeLink: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#06C167',
+  },
+  primaryOAuthBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 10,
+    marginBottom: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  primaryOAuthBtnDark: {
+    backgroundColor: '#1E1E22',
+    borderColor: '#3F3F46',
+  },
+  primaryOAuthBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
   },
 });
