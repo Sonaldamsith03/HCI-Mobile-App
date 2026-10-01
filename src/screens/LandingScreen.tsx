@@ -84,6 +84,19 @@ export const LandingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBotto
 
         <View style={styles.topRightControls}>
           <TouchableOpacity
+            onPress={() => navigation.navigate('DatabaseExplorer')}
+            style={[styles.circleBtn, isDark && styles.circleBtnDark]}
+            activeOpacity={0.7}
+            accessibilityLabel="Database Explorer"
+          >
+            <Ionicons
+              name="server-outline"
+              size={18}
+              color="#06C167"
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
             onPress={toggleThemeMode}
             style={[styles.circleBtn, isDark && styles.circleBtnDark]}
             activeOpacity={0.7}

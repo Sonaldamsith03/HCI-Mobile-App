@@ -563,6 +563,25 @@ class LogisticsService {
     this.currentDriverId = driverId;
     this.notifyDriverListeners();
 
+    // Cloud Sync: Persist driver and vehicle in Supabase
+    if (supabaseService.isConfigured()) {
+      supabaseService.registerDriverCloud({
+        driverId,
+        vehicleId,
+        name: data.name,
+        phone: data.phone,
+        email: data.email,
+        operatingArea: data.operatingArea,
+        deliveryRadiusKm: data.deliveryRadiusKm || 30,
+        preferredHours: data.preferredHours || '6:00 AM - 6:00 PM',
+        vehicleType: data.vehicleType,
+        vehicleModel: data.vehicleModel,
+        registrationNumber: data.registrationNumber,
+        capacityKg: data.capacityKg,
+        licenseNumber: data.licenseNumber,
+      }).catch(err => console.warn('Supabase registerDriverCloud error:', err));
+    }
+
     this.addNotification({
       recipientRole: 'DRIVER',
       driverId,

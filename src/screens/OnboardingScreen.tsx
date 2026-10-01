@@ -21,6 +21,7 @@ import { RootStackParamList } from '../types';
 import { Logo } from '../components/Logo';
 import { UberBottomNavBar } from '../components/UberBottomNavBar';
 import { useApp } from '../context/AppContext';
+import { supabaseService } from '../services/supabaseService';
 
 export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBottomNav = false }) => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -29,8 +30,15 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
 
   // Auth & UI States
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(userProfile.isLoggedIn || false);
   
+  // Keep in sync with AppContext profile
+  useEffect(() => {
+    if (userProfile.isLoggedIn !== undefined) {
+      setIsLoggedIn(userProfile.isLoggedIn);
+    }
+  }, [userProfile.isLoggedIn]);
+
   // First-time Role Questionnaire State: null | 'FARMER' | 'BUYER' | 'OTHER'
   const [selectedRoleType, setSelectedRoleType] = useState<'FARMER' | 'BUYER' | 'OTHER' | null>(null);
 
@@ -92,8 +100,8 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
     }
   };
 
-  // Dummy Email/Password Login & Signup
-  const handleSubmitAuth = () => {
+  // Cloud & Local Email/Password Login & Signup
+  const handleSubmitAuth = async () => {
     if (!emailOrPhone.trim()) {
       showToast('Please enter your email or phone number', 'warn');
       return;
@@ -104,40 +112,112 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
     }
 
     setIsLoading(true);
-    setTimeout(() => {
+
+    const cleanEmail = emailOrPhone.trim().toLowerCase();
+    const isAdminLogin = cleanEmail === 'admin@farmby.com' || cleanEmail === 'admin';
+
+    if (isAdminLogin) {
       setIsLoading(false);
-      const cleanEmail = emailOrPhone.trim().toLowerCase();
-      const isAdminLogin = cleanEmail === 'admin@farmby.com' || cleanEmail === 'admin';
-
-      if (isAdminLogin) {
-        updateUserProfile({
-          name: 'Administrator',
-          email: 'admin@farmby.com',
-          role: 'ADMIN',
-          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-          isLoggedIn: true,
-        });
-        setIsLoggedIn(true);
-        showToast('Authenticated as Platform Administrator 🛡️', 'success');
-        return;
-      }
-
-      const assignedRole = selectedRoleType || 'BUYER';
-      const nameToSet = authMode === 'signup' && fullName.trim() ? fullName.trim() : (userProfile.name || (assignedRole === 'FARMER' ? 'Mateo Gutierrez' : 'Sonal Perera'));
-      
       updateUserProfile({
-        name: nameToSet,
-        email: emailOrPhone.includes('@') ? emailOrPhone.trim() : userProfile.email,
-        phone: !emailOrPhone.includes('@') ? emailOrPhone.trim() : userProfile.phone,
-        role: assignedRole,
+        name: 'Administrator',
+        email: 'admin@farmby.com',
+        role: 'ADMIN',
+        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
         isLoggedIn: true,
       });
       setIsLoggedIn(true);
-      showToast(authMode === 'login' ? `Welcome back, ${nameToSet} (${assignedRole})!` : `Account created! Welcome, ${nameToSet}!`, 'success');
-    }, 600);
+      showToast('Authenticated as Platform Administrator 🛡️', 'success');
+      return;
+    }
+
+    const assignedRole = selectedRoleType || 'BUYER';
+    const nameToSet =
+      authMode === 'signup' && fullName.trim()
+        ? fullName.trim()
+        : userProfile.name || (assignedRole === 'FARMER' ? 'Mateo Gutierrez' : 'Sonal Perera');
+
+    // Live Supabase Authentication
+    if (supabaseService.isConfigured() && cleanEmail.includes('@')) {
+      try {
+        const validCloudRole: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN' =
+          assignedRole === 'FARMER' ? 'FARMER' : assignedRole === 'OTHER' ? 'BUYER' : 'BUYER';
+
+        if (authMode === 'signup') {
+          const { user, profile, error } = await supabaseService.signUp(cleanEmail, password, {
+            name: nameToSet,
+            role: validCloudRole,
+            phone: !emailOrPhone.includes('@') ? emailOrPhone.trim() : undefined,
+          });
+
+          if (error) {
+            setIsLoading(false);
+            showToast(error, 'warn');
+            return;
+          }
+
+          setIsLoading(false);
+          updateUserProfile({
+            name: nameToSet,
+            email: cleanEmail,
+            role: assignedRole,
+            isLoggedIn: true,
+          });
+          setIsLoggedIn(true);
+          showToast(`Cloud account created for ${nameToSet}! 🚀`, 'success');
+          return;
+        } else {
+          // Login
+          const { user, profile, error } = await supabaseService.signIn(cleanEmail, password);
+          if (error) {
+            // Check if demo credentials for quick offline testing, otherwise report real error
+            const isDemo =
+              cleanEmail.includes('greenvalley') ||
+              cleanEmail.includes('demo') ||
+              cleanEmail.includes('sonal');
+            if (!isDemo) {
+              setIsLoading(false);
+              showToast(error, 'warn');
+              return;
+            }
+          }
+
+          setIsLoading(false);
+          const activeName = profile?.name || nameToSet;
+          const activeRole = (profile?.role as any) || assignedRole;
+          updateUserProfile({
+            name: activeName,
+            email: cleanEmail,
+            role: activeRole,
+            isLoggedIn: true,
+          });
+          setIsLoggedIn(true);
+          showToast(`Welcome back, ${activeName}! (${activeRole})`, 'success');
+          return;
+        }
+      } catch (err: any) {
+        console.warn('Supabase auth flow error:', err);
+      }
+    }
+
+    // Local / Offline fallback
+    setIsLoading(false);
+    updateUserProfile({
+      name: nameToSet,
+      email: emailOrPhone.includes('@') ? emailOrPhone.trim() : userProfile.email,
+      phone: !emailOrPhone.includes('@') ? emailOrPhone.trim() : userProfile.phone,
+      role: assignedRole,
+      isLoggedIn: true,
+    });
+    setIsLoggedIn(true);
+    showToast(
+      authMode === 'login'
+        ? `Welcome back, ${nameToSet} (${assignedRole})!`
+        : `Account created! Welcome, ${nameToSet}!`,
+      'success'
+    );
   };
 
-  // Dummy Google Login
+  // Google Login
   const handleGoogleLogin = () => {
     setIsLoading(true);
     setTimeout(() => {
@@ -168,8 +248,11 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
     }, 700);
   };
 
-  // Sign out dummy handler
+  // Sign out handler
   const handleSignOut = () => {
+    if (supabaseService.isConfigured()) {
+      supabaseService.signOut().catch(() => {});
+    }
     updateUserProfile({ isLoggedIn: false });
     setIsLoggedIn(false);
     setSelectedRoleType(null); // Return to role prompt on sign out
@@ -427,6 +510,52 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
                     <Text style={styles.menuSubtitle}>2FA, Handover PIN protection</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#71717A" />
+                </TouchableOpacity>
+
+                <View style={[styles.divider, isDark ? styles.dividerDark : styles.dividerLight]} />
+
+                {/* Cloud Database Explorer & Live Query Inspector */}
+                <TouchableOpacity
+                  style={[styles.menuItem, { backgroundColor: isDark ? 'rgba(6, 193, 103, 0.08)' : 'rgba(6, 193, 103, 0.05)' }]}
+                  activeOpacity={0.7}
+                  onPress={() => navigation.navigate('DatabaseExplorer')}
+                >
+                  <View style={[styles.menuIconWrap, { backgroundColor: '#06C167' }]}>
+                    <Ionicons name="server" size={18} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.menuContent}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.menuTitle, { color: '#06C167', fontWeight: '800' }]}>Database Cloud Explorer</Text>
+                      <View style={{ backgroundColor: '#06C167', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
+                        <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFFFFF' }}>SQL / TABLES</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.menuSubtitle}>Inspect live Supabase tables, row counts & execute queries</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#06C167" />
+                </TouchableOpacity>
+
+                <View style={[styles.divider, isDark ? styles.dividerDark : styles.dividerLight]} />
+
+                {/* Switch Account / Dedicated Cloud Auth Portal */}
+                <TouchableOpacity
+                  style={[styles.menuItem, { backgroundColor: isDark ? 'rgba(59, 130, 246, 0.08)' : 'rgba(59, 130, 246, 0.05)' }]}
+                  activeOpacity={0.7}
+                  onPress={() => navigation.navigate('Auth', { initialMode: 'login' })}
+                >
+                  <View style={[styles.menuIconWrap, { backgroundColor: '#3B82F6' }]}>
+                    <Ionicons name="key" size={18} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.menuContent}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.menuTitle, { color: '#3B82F6', fontWeight: '800' }]}>Switch Cloud Account</Text>
+                      <View style={{ backgroundColor: '#3B82F6', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
+                        <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFFFFF' }}>AUTH</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.menuSubtitle}>Log in with another email/role or test demo profiles</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#3B82F6" />
                 </TouchableOpacity>
               </View>
 

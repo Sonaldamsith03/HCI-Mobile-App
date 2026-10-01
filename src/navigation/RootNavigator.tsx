@@ -16,6 +16,8 @@ import { DriverAuthScreen } from '../screens/logistics/DriverAuthScreen';
 import { DriverMainTabsScreen } from '../screens/logistics/DriverMainTabsScreen';
 import { DriverTripDetailScreen } from '../screens/logistics/DriverTripDetailScreen';
 import { DeliveryTrackingScreen } from '../screens/logistics/DeliveryTrackingScreen';
+import { AuthScreen } from '../screens/AuthScreen';
+import { DatabaseExplorerScreen } from '../screens/DatabaseExplorerScreen';
 
 import { useApp } from '../context/AppContext';
 
@@ -54,6 +56,8 @@ export const RootNavigator: React.FC = () => {
         <Stack.Screen name="DriverTripDetail" component={DriverTripDetailScreen} />
         <Stack.Screen name="DeliveryTracking" component={DeliveryTrackingScreen} />
         <Stack.Screen name="ChatConversation" component={ChatConversationScreen} />
+        <Stack.Screen name="Auth" component={AuthScreen} />
+        <Stack.Screen name="DatabaseExplorer" component={DatabaseExplorerScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

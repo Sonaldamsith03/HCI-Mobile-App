@@ -323,6 +323,44 @@ export const RoleSelectionScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hid
           </View>
         </View>
 
+        {/* SECTION: Supabase Cloud & Authentication */}
+        <View style={styles.sectionBlock}>
+          <Text style={[styles.sectionHeading, isDark && styles.textWhite]}>
+            Supabase Cloud & Database
+          </Text>
+          <View style={styles.cloudAccessRow}>
+            <TouchableOpacity
+              style={[styles.cloudAccessCard, isDark ? styles.cardDark : styles.cardLight]}
+              onPress={() => navigation.navigate('Auth', { initialMode: 'login' })}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.cloudAccessIcon, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                <Ionicons name="key" size={22} color="#3B82F6" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.cloudAccessTitle, isDark && styles.textWhite]}>Cloud Sign In & Register</Text>
+                <Text style={styles.cloudAccessDesc}>Buyer, Farmer, Driver auth & instant demo profiles</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#3B82F6" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.cloudAccessCard, isDark ? styles.cardDark : styles.cardLight]}
+              onPress={() => navigation.navigate('DatabaseExplorer')}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.cloudAccessIcon, { backgroundColor: 'rgba(6, 193, 103, 0.15)' }]}>
+                <Ionicons name="server" size={22} color="#06C167" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.cloudAccessTitle, isDark && styles.textWhite]}>Database Cloud Explorer</Text>
+                <Text style={styles.cloudAccessDesc}>Inspect live tables: produce, orders, deliveries & queries</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#06C167" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* SECTION 2: Get anything delivered (Uber Category Carousel) */}
         <View style={styles.sectionBlock}>
           <Text style={[styles.sectionHeading, isDark && styles.textWhite]}>
@@ -911,5 +949,42 @@ const styles = StyleSheet.create({
   },
   tabLabelActiveDark: {
     color: '#FFFFFF',
+  },
+  cloudAccessRow: {
+    gap: 10,
+    marginTop: 6,
+  },
+  cloudAccessCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 12,
+  },
+  cardDark: {
+    backgroundColor: '#121214',
+    borderColor: '#27272A',
+  },
+  cardLight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E2E8F0',
+  },
+  cloudAccessIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cloudAccessTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  cloudAccessDesc: {
+    fontSize: 11,
+    color: '#64748B',
   },
 });

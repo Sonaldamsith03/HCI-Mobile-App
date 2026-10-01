@@ -6,6 +6,7 @@ import { LandingScreen } from './LandingScreen';
 import { RoleSelectionScreen } from './RoleSelectionScreen';
 import { BuyerDashboard } from './BuyerDashboard';
 import { OnboardingScreen } from './OnboardingScreen';
+import { AuthScreen } from './AuthScreen';
 import { UberBottomNavBar, AppNavTab } from '../components/UberBottomNavBar';
 import { useApp } from '../context/AppContext';
 
@@ -48,7 +49,13 @@ export const MainTabsContainer: React.FC = () => {
         {currentBottomTab === 'home' && <LandingScreen hideBottomNav={true} />}
         {currentBottomTab === 'services' && <RoleSelectionScreen hideBottomNav={true} />}
         {currentBottomTab === 'activity' && <BuyerDashboard hideBottomNav={true} />}
-        {currentBottomTab === 'account' && <OnboardingScreen hideBottomNav={true} />}
+        {currentBottomTab === 'account' && (
+          userProfile.isLoggedIn ? (
+            <OnboardingScreen hideBottomNav={true} />
+          ) : (
+            <AuthScreen />
+          )
+        )}
       </Animated.View>
 
       {/* Permanently Static Floating Uber Navigation Bar */}

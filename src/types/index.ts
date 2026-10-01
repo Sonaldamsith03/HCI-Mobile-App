@@ -48,6 +48,7 @@ export interface CartItem {
 }
 
 export interface UserProfile {
+  id?: string;
   name: string;
   phone: string;
   email: string;
@@ -146,6 +147,7 @@ export * from './logistics';
 
 export type RootStackParamList = {
   MainTabs: { tab?: 'home' | 'services' | 'activity' | 'account' } | undefined;
+  Auth: { initialRole?: 'BUYER' | 'FARMER' | 'COURIER'; initialMode?: 'login' | 'signup' } | undefined;
   Landing: undefined;
   Onboarding: undefined;
   RoleSelection: undefined;
@@ -166,5 +168,6 @@ export type RootStackParamList = {
   DriverDashboard: { initialTab?: 'home' | 'trips' | 'earnings' | 'notifications' | 'profile' } | undefined;
   DriverTripDetail: { deliveryId: string };
   DeliveryTracking: { deliveryId: string; userRole?: 'BUYER' | 'FARMER' };
+  DatabaseExplorer: undefined;
 };
 

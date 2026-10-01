@@ -100,6 +100,51 @@ export const supabaseService = {
     }
   },
 
+  async updateProduce(crop: Produce): Promise<boolean> {
+    if (!isSupabaseConfigured()) return false;
+    try {
+      const { error } = await supabase
+        .from('produce')
+        .update({
+          name: crop.name,
+          category: crop.category,
+          price: crop.price,
+          quantity: crop.quantity,
+          unit: crop.unit,
+          location: crop.location,
+          description: crop.description,
+          middleman_price: crop.middlemanPrice,
+          harvest_date: crop.harvestDate,
+          is_organic: crop.isOrganic,
+        })
+        .eq('id', crop.id);
+
+      if (error) {
+        console.warn('Supabase updateProduce error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Supabase updateProduce failed:', err);
+      return false;
+    }
+  },
+
+  async deleteProduce(id: number): Promise<boolean> {
+    if (!isSupabaseConfigured()) return false;
+    try {
+      const { error } = await supabase.from('produce').delete().eq('id', id);
+      if (error) {
+        console.warn('Supabase deleteProduce error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Supabase deleteProduce failed:', err);
+      return false;
+    }
+  },
+
   // ── Orders & Transactions ────────────────────────────────────────────────
   async fetchOrders(): Promise<Transaction[] | null> {
     if (!isSupabaseConfigured()) return null;
@@ -307,5 +352,230 @@ export const supabaseService = {
     return () => {
       supabase.removeChannel(channel);
     };
+  },
+
+  // ── Authentication & Profiles ─────────────────────────────────────────────
+  async signUp(
+    email: string,
+    password: string,
+    profileData: {
+      name: string;
+      role: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN';
+      phone?: string;
+    }
+  ): Promise<{ user: any; profile: any; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { user: null, profile: null, error: 'Supabase is not configured' };
+    }
+
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: password.trim(),
+        options: {
+          data: {
+            name: profileData.name,
+            role: profileData.role,
+            phone: profileData.phone || '',
+          },
+        },
+      });
+
+      if (error) {
+        return { user: null, profile: null, error: error.message };
+      }
+
+      const user = data.user;
+      if (!user) {
+        return { user: null, profile: null, error: 'Sign up failed to return user data' };
+      }
+
+      // Upsert profile record in public.profiles table
+      const { data: profileRecord, error: profileErr } = await supabase
+        .from('profiles')
+        .upsert(
+          {
+            auth_user_id: user.id,
+            name: profileData.name,
+            email: cleanEmail,
+            phone: profileData.phone || null,
+            role: profileData.role,
+            wallet_balance: profileData.role === 'FARMER' ? 24500 : 12500,
+            status: 'active',
+          },
+          { onConflict: 'email' }
+        )
+        .select()
+        .single();
+
+      if (profileErr) {
+        console.warn('Profile creation note:', profileErr.message);
+      }
+
+      return { user, profile: profileRecord || { ...profileData, email: cleanEmail }, error: null };
+    } catch (err: any) {
+      return { user: null, profile: null, error: err.message || 'Unexpected sign up failure' };
+    }
+  },
+
+  async signIn(
+    email: string,
+    password: string
+  ): Promise<{ user: any; profile: any; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { user: null, profile: null, error: 'Supabase is not configured' };
+    }
+
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: password.trim(),
+      });
+
+      if (error) {
+        return { user: null, profile: null, error: error.message };
+      }
+
+      const user = data.user;
+      if (!user) {
+        return { user: null, profile: null, error: 'User session not found' };
+      }
+
+      // Fetch profile from public.profiles
+      const { data: profileRecord } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`auth_user_id.eq.${user.id},email.eq.${cleanEmail}`)
+        .maybeSingle();
+
+      const profile = profileRecord || {
+        name: user.user_metadata?.name || 'Verified User',
+        role: user.user_metadata?.role || 'BUYER',
+        email: cleanEmail,
+      };
+
+      return { user, profile, error: null };
+    } catch (err: any) {
+      return { user: null, profile: null, error: err.message || 'Unexpected sign in failure' };
+    }
+  },
+
+  async signOut(): Promise<void> {
+    if (!isSupabaseConfigured()) return;
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Supabase signOut error:', e);
+    }
+  },
+
+  async getCurrentSessionUser(): Promise<any | null> {
+    if (!isSupabaseConfigured()) return null;
+    try {
+      const { data } = await supabase.auth.getUser();
+      return data.user || null;
+    } catch {
+      return null;
+    }
+  },
+
+  // ── Driver Cloud Operations ──────────────────────────────────────────────
+  async registerDriverCloud(data: {
+    driverId: string;
+    vehicleId: string;
+    name: string;
+    phone: string;
+    email: string;
+    operatingArea: string;
+    deliveryRadiusKm: number;
+    preferredHours: string;
+    vehicleType: string;
+    vehicleModel: string;
+    registrationNumber: string;
+    capacityKg: number;
+    licenseNumber?: string;
+  }): Promise<boolean> {
+    if (!isSupabaseConfigured()) return false;
+    try {
+      // 1. Insert vehicle
+      await supabase.from('vehicles').upsert({
+        id: data.vehicleId,
+        driver_id: data.driverId,
+        type: data.vehicleType,
+        model: data.vehicleModel,
+        registration_number: data.registrationNumber.toUpperCase(),
+        capacity_kg: data.capacityKg,
+        capacity_label: `${data.capacityKg} kg`,
+        documents_verified: true,
+        license_number: data.licenseNumber || 'PENDING',
+      });
+
+      // 2. Insert driver
+      await supabase.from('drivers').upsert({
+        id: data.driverId,
+        name: data.name,
+        phone: data.phone,
+        email: data.email.toLowerCase(),
+        profile_image:
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+        verification_status: 'active',
+        availability_status: 'ONLINE',
+        vehicle_id: data.vehicleId,
+        operating_area: data.operatingArea,
+        delivery_radius_km: data.deliveryRadiusKm,
+        preferred_hours: data.preferredHours,
+      });
+
+      return true;
+    } catch (err) {
+      console.warn('Supabase registerDriverCloud error:', err);
+      return false;
+    }
+  },
+
+  // ── Database Explorer / Cloud Inspection ───────────────────────────────────
+  async fetchTableRows(
+    table: 'produce' | 'orders' | 'deliveries' | 'profiles' | 'drivers' | 'vehicles',
+    limit: number = 25
+  ): Promise<any[]> {
+    if (!isSupabaseConfigured()) return [];
+    try {
+      const { data, error } = await supabase.from(table).select('*').limit(limit);
+      if (error) {
+        console.warn(`Supabase fetchTableRows (${table}) error:`, error.message);
+        return [];
+      }
+      return data || [];
+    } catch (err) {
+      console.warn(`Supabase fetchTableRows (${table}) failed:`, err);
+      return [];
+    }
+  },
+
+  async getTableCounts(): Promise<{ [key: string]: number }> {
+    if (!isSupabaseConfigured()) return {};
+    const tables = ['produce', 'orders', 'deliveries', 'profiles', 'drivers', 'vehicles'] as const;
+    const counts: { [key: string]: number } = {};
+
+    await Promise.all(
+      tables.map(async t => {
+        try {
+          const { count, error } = await supabase
+            .from(t)
+            .select('*', { count: 'exact', head: true });
+          if (!error && typeof count === 'number') {
+            counts[t] = count;
+          } else {
+            counts[t] = 0;
+          }
+        } catch {
+          counts[t] = 0;
+        }
+      })
+    );
+
+    return counts;
   },
 };

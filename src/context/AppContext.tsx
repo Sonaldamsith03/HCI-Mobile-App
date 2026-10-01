@@ -391,6 +391,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = produceList.map(item => (item.id === crop.id ? crop : item));
     setProduceList(updated);
     await persistData(STORAGE_KEYS.PRODUCE, updated);
+
+    if (supabaseService.isConfigured()) {
+      supabaseService.updateProduce(crop).catch(err => {
+        console.warn('Supabase updateProduce error:', err);
+      });
+    }
+
     showToast(`Updated listing: ${crop.name}`, 'success');
   };
 
@@ -398,6 +405,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = produceList.filter(item => item.id !== id);
     setProduceList(updated);
     await persistData(STORAGE_KEYS.PRODUCE, updated);
+
+    if (supabaseService.isConfigured()) {
+      supabaseService.deleteProduce(id).catch(err => {
+        console.warn('Supabase deleteProduce error:', err);
+      });
+    }
+
     showToast(`Harvest listing removed`, 'info');
   };
 
