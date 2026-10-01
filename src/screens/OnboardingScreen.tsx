@@ -356,6 +356,29 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
                   </>
                 )}
 
+                {/* Logistics Driver Portal Shortcut */}
+                <TouchableOpacity
+                  style={[styles.menuItem, { backgroundColor: isDark ? 'rgba(6, 193, 103, 0.08)' : 'rgba(6, 193, 103, 0.06)' }]}
+                  activeOpacity={0.7}
+                  onPress={() => navigation.navigate('DriverAuth')}
+                >
+                  <View style={[styles.menuIconWrap, { backgroundColor: '#06C167' }]}>
+                    <Ionicons name="car-sport" size={19} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.menuContent}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.menuTitle, { color: '#06C167', fontWeight: '800' }]}>Logistics Driver Fleet</Text>
+                      <View style={{ backgroundColor: '#06C167', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
+                        <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFFFFF' }}>DRIVER</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.menuSubtitle}>Accept farm dispatches, manage trips & view earnings</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#06C167" />
+                </TouchableOpacity>
+
+                <View style={[styles.divider, isDark ? styles.dividerDark : styles.dividerLight]} />
+
                 <TouchableOpacity
                   style={styles.menuItem}
                   activeOpacity={0.7}
@@ -372,6 +395,7 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
                 </TouchableOpacity>
 
                 <View style={[styles.divider, isDark ? styles.dividerDark : styles.dividerLight]} />
+
 
                 <TouchableOpacity
                   style={styles.menuItem}
@@ -500,6 +524,33 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
                   </View>
                   <Ionicons name="chevron-forward" size={20} color="#06C167" />
                 </TouchableOpacity>
+
+                {/* Choice 4: Logistics Driver Partner */}
+                <TouchableOpacity
+                  style={[
+                    styles.roleOptionCard,
+                    isDark ? styles.cardDark : styles.cardLight,
+                    { borderColor: isDark ? '#276EF1' : '#276EF1', borderWidth: 1.5 },
+                  ]}
+                  onPress={() => navigation.navigate('DriverAuth')}
+                  activeOpacity={0.85}
+                >
+                  <View style={[styles.roleIconWrap, { backgroundColor: 'rgba(39, 110, 241, 0.18)' }]}>
+                    <Ionicons name="car-sport" size={26} color="#276EF1" />
+                  </View>
+                  <View style={styles.roleCardInfo}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.roleCardTitle, isDark && styles.textWhite]}>Logistics Driver</Text>
+                      <View style={[styles.rolePill, { backgroundColor: '#276EF1' }]}>
+                        <Text style={[styles.rolePillText, { color: '#FFFFFF' }]}>FLEET COURIER</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.roleCardDesc}>
+                      Transport farm harvests via Motorbike, Tuk-Tuk, Van or Truck. On-demand dispatches with instant payouts.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#276EF1" />
+                </TouchableOpacity>
               </View>
 
               {/* Admin quick access */}
@@ -517,6 +568,7 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
                 <Text style={styles.adminDirectLinkText}>Platform Staff / Admin Sign In</Text>
               </TouchableOpacity>
             </Animated.View>
+
           ) : (
             /* ================= STEP 2: AUTH / LOGIN & SIGN UP VIEW ================= */
             <Animated.View style={[styles.authContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>

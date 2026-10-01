@@ -101,6 +101,7 @@ export const FarmerDashboard: React.FC = () => {
     sendMessage,
     respondToOffer,
     userProfile,
+    getDeliveryForTransaction,
   } = useApp();
 
   const isDark = themeMode === 'dark';
@@ -401,6 +402,100 @@ export const FarmerDashboard: React.FC = () => {
                     {tx.deliveryMethod}: {tx.deliveryAddress}
                   </Text>
                 </View>
+
+                {/* Logistics Fleet Driver Info for Farmer */}
+                {(() => {
+                  const delivery = getDeliveryForTransaction(tx.id);
+                  if (delivery && delivery.assignedDriver) {
+                    return (
+                      <View
+                        style={{
+                          backgroundColor: isDark ? '#18181B' : '#F1F5F9',
+                          borderRadius: 12,
+                          padding: 12,
+                          marginTop: 8,
+                          marginBottom: 4,
+                          borderWidth: 1,
+                          borderColor: isDark ? '#27272A' : '#E2E8F0',
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <View style={{ width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#06C167' }} />
+                            <Text style={{ fontSize: 10.5, fontWeight: '800', color: isDark ? '#A1A1AA' : '#64748B', letterSpacing: 0.5 }}>
+                              LOGISTICS FLEET DRIVER
+                            </Text>
+                          </View>
+                          <View style={{ backgroundColor: 'rgba(6, 193, 103, 0.15)', paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 6 }}>
+                            <Text style={{ fontSize: 10, fontWeight: '800', color: '#06C167' }}>
+                              {delivery.status}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                            <Image
+                              source={{ uri: delivery.assignedDriver.profileImage }}
+                              style={{ width: 34, height: 34, borderRadius: 17 }}
+                            />
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 13, fontWeight: '800', color: isDark ? '#FFFFFF' : '#0F172A' }} numberOfLines={1}>
+                                {delivery.assignedDriver.name}
+                              </Text>
+                              <Text style={{ fontSize: 10.5, color: isDark ? '#94A3B8' : '#64748B' }}>
+                                {delivery.assignedDriver.vehicle.model} • [ {delivery.assignedDriver.vehicle.registrationNumber} ]
+                              </Text>
+                            </View>
+                          </View>
+
+                          <TouchableOpacity
+                            style={{
+                              backgroundColor: '#06C167',
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 8,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                            onPress={() => navigation.navigate('DeliveryTracking', { deliveryId: delivery.id })}
+                            activeOpacity={0.85}
+                          >
+                            <Ionicons name="navigate" size={12} color="#FFFFFF" />
+                            <Text style={{ fontSize: 11, fontWeight: '800', color: '#FFFFFF' }}>Track Driver</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  } else if (delivery && !delivery.assignedDriver) {
+                    return (
+                      <View
+                        style={{
+                          backgroundColor: isDark ? '#1C1917' : '#FEF3C7',
+                          borderRadius: 10,
+                          padding: 10,
+                          marginTop: 6,
+                          marginBottom: 4,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Ionicons name="hourglass-outline" size={14} color="#D97706" />
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: isDark ? '#FDE68A' : '#92400E' }}>
+                            Searching for Fleet Driver ({delivery.id})
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize: 10.5, fontWeight: '600', color: isDark ? '#F59E0B' : '#B45309' }}>
+                          LKR {delivery.customerDeliveryFee}
+                        </Text>
+                      </View>
+                    );
+                  }
+                  return null;
+                })()}
 
                 <ForestPrimaryButton
                   title="Update Fulfillment Step"

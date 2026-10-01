@@ -25,8 +25,11 @@ import {
 } from '../data/seedData';
 import { getThemeColors, ThemeColors } from '../theme/colors';
 import { chatService } from '../services/chatService';
+import { logisticsService } from '../services/logisticsService';
+import { Delivery } from '../types/logistics';
 
 interface AppContextType {
+
   produceList: Produce[];
   transactions: Transaction[];
   messages: Message[];
@@ -118,9 +121,13 @@ interface AppContextType {
   cropTypes: { id: string; name: string; category: ProduceCategory; basePriceKg: number; season: string; icon: string }[];
   addCropType: (newCrop: { name: string; category: ProduceCategory; basePriceKg: number; season: string }) => void;
   deleteCropType: (id: string) => void;
+  // Logistics Fleet Deliveries
+  deliveries: Delivery[];
+  getDeliveryForTransaction: (txId: number) => Delivery | undefined;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
 
 const STORAGE_KEYS = {
   PRODUCE: '@agriconnect_produce_v2',
@@ -147,6 +154,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentBottomTab, setCurrentBottomTab] = useState<'home' | 'services' | 'activity' | 'account'>('home');
   const [systemUsers, setSystemUsers] = useState<import('../types').SystemUser[]>(INITIAL_SYSTEM_USERS);
   const [cropTypes, setCropTypes] = useState(INITIAL_CROP_TYPES);
+  const [deliveries, setDeliveries] = useState<Delivery[]>([]);
 
   // Subscribe to real-time chat service threads
   useEffect(() => {
@@ -155,6 +163,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     return unsubscribe;
   }, []);
+
+  // Subscribe to real-time logistics deliveries
+  useEffect(() => {
+    const unsubscribe = logisticsService.subscribeToDeliveries((updatedDeliveries) => {
+      setDeliveries(updatedDeliveries);
+    });
+    return unsubscribe;
+  }, []);
+
+  const getDeliveryForTransaction = (txId: number) => {
+    return deliveries.find(d => d.orderId === txId);
+  };
+
 
   const unreadMessageCount = conversationThreads.reduce((sum, t) => sum + t.unreadCount, 0);
 
@@ -451,6 +472,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         timestamp: Date.now(),
       };
       newTxList.push(newTx);
+
+      // Automatically dispatch delivery request to Logistics Fleet if courier/delivery selected
+      if (deliveryMethod !== 'Self Pickup') {
+        const estWeight = item.produce.unit.toLowerCase().includes('kg') ? item.quantity : Math.max(5, item.quantity * 2);
+        logisticsService.createDeliveryRequest({
+          orderId: newTx.id,
+          farmerName: item.produce.farmerName || 'Local Farmer',
+          farmerPhone: item.produce.farmerPhone || '+94 77 123 4567',
+          farmerAddress: item.produce.location || 'Negombo Agricultural Centre, Western Province',
+          buyerName: userProfile.name || 'AgriConnect Buyer',
+          buyerPhone: userProfile.phone || '+94 71 888 9999',
+          buyerAddress: deliveryAddress.trim() || userProfile.defaultAddress || 'Colombo 03, Western Province',
+          produceName: item.produce.name,
+          produceCategory: item.produce.category,
+          quantity: `${item.quantity} ${item.produce.unit}`,
+          weightKg: estWeight,
+          specialHandling: 'Perishable farm goods. Keep ventilated and dry.',
+          deliveryInstructions: 'Call buyer upon arrival at gate.',
+        }).catch(err => console.warn('Failed to dispatch logistics request for cart item', err));
+      }
     }
 
     const updatedTransactions = [...newTxList, ...transactions];
@@ -542,6 +583,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await persistData(STORAGE_KEYS.TRANSACTIONS, updatedTransactions);
 
     showToast(`Order for ${produce.name} placed with Escrow!`, 'success');
+
+    // Automatically dispatch delivery request to Logistics Fleet if delivery selected
+    if (deliveryMethod !== 'Self Pickup') {
+      const estWeight = produce.unit.toLowerCase().includes('kg') ? quantity : Math.max(5, quantity * 2);
+      logisticsService.createDeliveryRequest({
+        orderId: newTx.id,
+        farmerName: produce.farmerName || 'Local Farmer',
+        farmerPhone: produce.farmerPhone || '+94 77 123 4567',
+        farmerAddress: produce.location || 'Negombo Agricultural Centre, Western Province',
+        buyerName: userProfile.name || 'AgriConnect Buyer',
+        buyerPhone: userProfile.phone || '+94 71 888 9999',
+        buyerAddress: deliveryAddress.trim() || userProfile.defaultAddress || 'Colombo 03, Western Province',
+        produceName: produce.name,
+        produceCategory: produce.category,
+        quantity: `${quantity} ${produce.unit}`,
+        weightKg: estWeight,
+        specialHandling: 'Perishable farm goods. Keep ventilated and dry.',
+        deliveryInstructions: 'Call buyer upon arrival at gate.',
+      }).catch(err => console.warn('Failed to dispatch logistics request for produce booking', err));
+    }
 
     // Auto-generate confirmation message
     await sendMessage(
@@ -766,6 +827,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cropTypes,
         addCropType,
         deleteCropType,
+        deliveries,
+        getDeliveryForTransaction,
       }}
     >
       {children}

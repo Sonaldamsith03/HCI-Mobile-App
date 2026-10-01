@@ -183,6 +183,7 @@ export const BuyerDashboard: React.FC<{ hideBottomNav?: boolean }> = ({ hideBott
     topUpWallet,
     releaseEscrow,
     setCurrentBottomTab,
+    getDeliveryForTransaction,
   } = useApp();
 
   const isDark = themeMode === 'dark';
@@ -1271,6 +1272,74 @@ export const BuyerDashboard: React.FC<{ hideBottomNav?: boolean }> = ({ hideBott
                         </Text>
                       </View>
                     </View>
+
+                    {/* Dedicated Logistics Delivery Driver Card */}
+                    {(() => {
+                      const delivery = getDeliveryForTransaction(tx.id);
+                      if (delivery && delivery.assignedDriver) {
+                        return (
+                          <View
+                            style={{
+                              backgroundColor: isDark ? '#121214' : '#F8FAFC',
+                              borderRadius: 14,
+                              padding: 12,
+                              marginVertical: 10,
+                              borderWidth: 1,
+                              borderColor: isDark ? '#27272A' : '#E2E8F0',
+                            }}
+                          >
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#06C167' }} />
+                                <Text style={{ fontSize: 11, fontWeight: '800', color: isDark ? '#A1A1AA' : '#64748B', textTransform: 'uppercase' }}>
+                                  Assigned Courier Driver
+                                </Text>
+                              </View>
+                              <View style={{ backgroundColor: 'rgba(6, 193, 103, 0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
+                                <Text style={{ fontSize: 10.5, fontWeight: '800', color: '#06C167' }}>
+                                  {delivery.status}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                                <Image
+                                  source={{ uri: delivery.assignedDriver.profileImage }}
+                                  style={{ width: 38, height: 38, borderRadius: 19 }}
+                                />
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: 14, fontWeight: '800', color: isDark ? '#FFFFFF' : '#0F172A' }} numberOfLines={1}>
+                                    {delivery.assignedDriver.name}
+                                  </Text>
+                                  <Text style={{ fontSize: 11, color: isDark ? '#94A3B8' : '#64748B' }}>
+                                    {delivery.assignedDriver.vehicle.model} • [ {delivery.assignedDriver.vehicle.registrationNumber} ]
+                                  </Text>
+                                </View>
+                              </View>
+
+                              <TouchableOpacity
+                                style={{
+                                  backgroundColor: '#06C167',
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 7,
+                                  borderRadius: 10,
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                }}
+                                onPress={() => navigation.navigate('DeliveryTracking', { deliveryId: delivery.id })}
+                                activeOpacity={0.85}
+                              >
+                                <Ionicons name="navigate" size={13} color="#FFFFFF" />
+                                <Text style={{ fontSize: 12, fontWeight: '800', color: '#FFFFFF' }}>Live Track</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      }
+                      return null;
+                    })()}
 
                     {/* Handover PIN & Action Buttons Row */}
                     <View style={styles.pinAndTrackRow}>

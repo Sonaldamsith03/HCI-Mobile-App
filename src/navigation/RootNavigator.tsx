@@ -12,6 +12,10 @@ import { ProductDetailScreen } from '../screens/ProductDetailScreen';
 import { AdminDashboard } from '../screens/AdminDashboard';
 import { LogisticsDashboard } from '../screens/LogisticsDashboard';
 import { ChatConversationScreen } from '../screens/ChatConversationScreen';
+import { DriverAuthScreen } from '../screens/logistics/DriverAuthScreen';
+import { DriverMainTabsScreen } from '../screens/logistics/DriverMainTabsScreen';
+import { DriverTripDetailScreen } from '../screens/logistics/DriverTripDetailScreen';
+import { DeliveryTrackingScreen } from '../screens/logistics/DeliveryTrackingScreen';
 
 import { useApp } from '../context/AppContext';
 
@@ -44,9 +48,14 @@ export const RootNavigator: React.FC = () => {
         <Stack.Screen name="BuyerDashboard" component={BuyerDashboard} />
         <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
         <Stack.Screen name="AdminDashboard" component={AdminDashboard} />
-        <Stack.Screen name="LogisticsDashboard" component={LogisticsDashboard} />
+        <Stack.Screen name="LogisticsDashboard" component={DriverMainTabsScreen} />
+        <Stack.Screen name="DriverAuth" component={DriverAuthScreen} />
+        <Stack.Screen name="DriverDashboard" component={DriverMainTabsScreen} />
+        <Stack.Screen name="DriverTripDetail" component={DriverTripDetailScreen} />
+        <Stack.Screen name="DeliveryTracking" component={DeliveryTrackingScreen} />
         <Stack.Screen name="ChatConversation" component={ChatConversationScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
 };
+

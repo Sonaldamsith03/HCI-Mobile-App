@@ -142,6 +142,8 @@ export interface CommunityPool {
   pickupHub: string;
 }
 
+export * from './logistics';
+
 export type RootStackParamList = {
   MainTabs: { tab?: 'home' | 'services' | 'activity' | 'account' } | undefined;
   Landing: undefined;
@@ -160,4 +162,9 @@ export type RootStackParamList = {
     produceId?: number;
     initialMessage?: string;
   };
+  DriverAuth: { initialMode?: 'login' | 'register' } | undefined;
+  DriverDashboard: { initialTab?: 'home' | 'trips' | 'earnings' | 'notifications' | 'profile' } | undefined;
+  DriverTripDetail: { deliveryId: string };
+  DeliveryTracking: { deliveryId: string; userRole?: 'BUYER' | 'FARMER' };
 };
+
