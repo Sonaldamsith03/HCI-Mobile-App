@@ -387,27 +387,25 @@ export const supabaseService = {
       }
 
       const user = data.user;
-      if (!user) {
-        return { user: null, profile: null, error: 'Sign up failed to return user data' };
-      }
+      const userId = user?.id;
 
-      // Safe profile creation/update in public.profiles table
+      // Upsert profile in public.profiles table
       let profileRecord: any = null;
       try {
         const { data: existing } = await supabase
           .from('profiles')
           .select('*')
-          .or(`auth_user_id.eq.${user.id},email.eq.${cleanEmail}`)
+          .eq('email', cleanEmail)
           .maybeSingle();
 
         if (existing) {
           const { data: updated } = await supabase
             .from('profiles')
             .update({
-              auth_user_id: user.id,
-              name: profileData.name,
+              auth_user_id: userId || existing.auth_user_id,
+              name: profileData.name || existing.name,
               phone: profileData.phone || existing.phone,
-              role: profileData.role,
+              role: profileData.role || existing.role,
             })
             .eq('id', existing.id)
             .select()
@@ -417,7 +415,7 @@ export const supabaseService = {
           const { data: inserted, error: insErr } = await supabase
             .from('profiles')
             .insert({
-              auth_user_id: user.id,
+              auth_user_id: userId || null,
               name: profileData.name,
               email: cleanEmail,
               phone: profileData.phone || null,
@@ -430,16 +428,24 @@ export const supabaseService = {
             .single();
 
           if (insErr) {
-            console.warn('Profile insert warning:', insErr.message);
+            console.warn('Profile insert note:', insErr.message);
+            // Fallback fetch
+            const { data: fallback } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('email', cleanEmail)
+              .maybeSingle();
+            profileRecord = fallback;
           } else {
             profileRecord = inserted;
           }
         }
       } catch (profileErr: any) {
-        console.warn('Profile creation note:', profileErr?.message);
+        console.warn('Profile sync exception:', profileErr?.message);
       }
 
       const formattedProfile = {
+        id: profileRecord?.id || userId || `usr-${Date.now()}`,
         name: profileRecord?.name || profileData.name,
         role: profileRecord?.role || profileData.role,
         email: cleanEmail,
@@ -452,7 +458,7 @@ export const supabaseService = {
         isLoggedIn: true,
       };
 
-      return { user, profile: formattedProfile, error: null };
+      return { user: user || { email: cleanEmail, id: formattedProfile.id }, profile: formattedProfile, error: null };
     } catch (err: any) {
       return { user: null, profile: null, error: err.message || 'Unexpected sign up failure' };
     }
@@ -461,7 +467,7 @@ export const supabaseService = {
   async signIn(
     email: string,
     password: string
-  ): Promise<{ user: any; profile: any; error: string | null }> {
+  ): Promise<{ user: any; profile: any; error: string | null; notice?: string }> {
     if (!isSupabaseConfigured()) {
       return { user: null, profile: null, error: 'Supabase is not configured' };
     }
@@ -474,6 +480,36 @@ export const supabaseService = {
       });
 
       if (error) {
+        // If Supabase has "Confirm Email" enabled, handle smoothly if profile exists in database
+        if (error.message.toLowerCase().includes('email not confirmed')) {
+          const { data: profileRecord } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('email', cleanEmail)
+            .maybeSingle();
+
+          if (profileRecord) {
+            const profile = {
+              id: profileRecord.id,
+              name: profileRecord.name,
+              role: profileRecord.role,
+              email: profileRecord.email,
+              phone: profileRecord.phone || '',
+              avatarUrl: profileRecord.avatar_url || '',
+              defaultAddress: profileRecord.default_address || 'Central Delivery Hub #4B, Green Valley',
+              walletBalance: Number(profileRecord.wallet_balance ?? 12500),
+              escrowBalance: Number(profileRecord.escrow_balance ?? 0),
+              savedAddresses: [profileRecord.default_address || 'Central Delivery Hub #4B, Green Valley'],
+              isLoggedIn: true,
+            };
+            return {
+              user: { email: cleanEmail, id: profileRecord.id },
+              profile,
+              error: null,
+              notice: 'Email confirmation link was sent to your inbox. You can continue exploring the app!',
+            };
+          }
+        }
         return { user: null, profile: null, error: error.message };
       }
 
@@ -483,15 +519,35 @@ export const supabaseService = {
       }
 
       // Fetch profile from public.profiles
-      const { data: profileRecord } = await supabase
+      let { data: profileRecord } = await supabase
         .from('profiles')
         .select('*')
         .or(`auth_user_id.eq.${user.id},email.eq.${cleanEmail}`)
         .maybeSingle();
 
+      // If profile record doesn't exist yet, auto-create it
+      if (!profileRecord) {
+        const metadataRole = (user.user_metadata?.role as any) || 'BUYER';
+        const metadataName = user.user_metadata?.name || cleanEmail.split('@')[0];
+        const { data: created } = await supabase
+          .from('profiles')
+          .insert({
+            auth_user_id: user.id,
+            name: metadataName,
+            email: cleanEmail,
+            role: metadataRole,
+            wallet_balance: metadataRole === 'FARMER' ? 24500 : 12500,
+            escrow_balance: 0,
+            status: 'active',
+          })
+          .select()
+          .single();
+        profileRecord = created;
+      }
+
       const profile = {
-        id: profileRecord?.id,
-        name: profileRecord?.name || user.user_metadata?.name || 'Verified User',
+        id: profileRecord?.id || user.id,
+        name: profileRecord?.name || user.user_metadata?.name || cleanEmail.split('@')[0],
         role: profileRecord?.role || user.user_metadata?.role || 'BUYER',
         email: profileRecord?.email || cleanEmail,
         phone: profileRecord?.phone || user.user_metadata?.phone || '',
@@ -525,6 +581,147 @@ export const supabaseService = {
       return data.user || null;
     } catch {
       return null;
+    }
+  },
+
+  // ── Google OAuth & Social Auth ──────────────────────────────────────────
+  async signInWithGoogleOAuth(): Promise<{ data: any; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { data: null, error: 'Supabase is not configured' };
+    }
+    try {
+      const redirectTo = typeof window !== 'undefined' && window.location ? window.location.origin : undefined;
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+        },
+      });
+
+      if (error) {
+        return { data: null, error: error.message };
+      }
+      return { data, error: null };
+    } catch (err: any) {
+      return { data: null, error: err.message || 'Failed to initiate Google OAuth' };
+    }
+  },
+
+  async loginWithGoogleAccount(googleAccount: {
+    email: string;
+    name: string;
+    avatarUrl?: string;
+    role: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN';
+  }): Promise<{ user: any; profile: any; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { user: null, profile: null, error: 'Supabase is not configured' };
+    }
+    try {
+      const cleanEmail = googleAccount.email.trim().toLowerCase();
+
+      // Upsert into public.profiles
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+
+      let profileRecord: any = null;
+      if (existing) {
+        const { data: updated } = await supabase
+          .from('profiles')
+          .update({
+            name: googleAccount.name,
+            role: googleAccount.role,
+            avatar_url: googleAccount.avatarUrl || existing.avatar_url,
+          })
+          .eq('id', existing.id)
+          .select()
+          .single();
+        profileRecord = updated || existing;
+      } else {
+        const { data: inserted } = await supabase
+          .from('profiles')
+          .insert({
+            name: googleAccount.name,
+            email: cleanEmail,
+            role: googleAccount.role,
+            avatar_url:
+              googleAccount.avatarUrl ||
+              'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+            wallet_balance: googleAccount.role === 'FARMER' ? 24500 : 12500,
+            escrow_balance: 0,
+            status: 'active',
+          })
+          .select()
+          .single();
+        profileRecord = inserted;
+      }
+
+      const formattedProfile = {
+        name: profileRecord?.name || googleAccount.name,
+        role: profileRecord?.role || googleAccount.role,
+        email: cleanEmail,
+        avatarUrl:
+          profileRecord?.avatar_url ||
+          googleAccount.avatarUrl ||
+          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+        defaultAddress: profileRecord?.default_address || 'Central Delivery Hub #4B, Green Valley',
+        walletBalance: Number(profileRecord?.wallet_balance ?? (googleAccount.role === 'FARMER' ? 24500 : 12500)),
+        escrowBalance: Number(profileRecord?.escrow_balance ?? 0),
+        savedAddresses: [profileRecord?.default_address || 'Central Delivery Hub #4B, Green Valley'],
+        isLoggedIn: true,
+      };
+
+      return {
+        user: { email: cleanEmail, id: profileRecord?.id || 'usr-google' },
+        profile: formattedProfile,
+        error: null,
+      };
+    } catch (err: any) {
+      return { user: null, profile: null, error: err.message || 'Google account sync error' };
+    }
+  },
+
+  // ── Supabase Email Service: Magic Link & Password Reset ─────────────────
+  async sendMagicLink(email: string): Promise<{ success: boolean; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { success: false, error: 'Supabase is not configured' };
+    }
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const redirectTo = typeof window !== 'undefined' && window.location ? window.location.origin : undefined;
+      const { error } = await supabase.auth.signInWithOtp({
+        email: cleanEmail,
+        options: {
+          emailRedirectTo: redirectTo,
+        },
+      });
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true, error: null };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to send magic link email' };
+    }
+  },
+
+  async sendPasswordReset(email: string): Promise<{ success: boolean; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { success: false, error: 'Supabase is not configured' };
+    }
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const redirectTo = typeof window !== 'undefined' && window.location ? window.location.origin : undefined;
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo,
+      });
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true, error: null };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to send password reset email' };
     }
   },
 

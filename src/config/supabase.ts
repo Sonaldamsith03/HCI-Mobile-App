@@ -16,6 +16,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export const SUPABASE_URL: string = 'https://rcxkrkjknsdyeiupsuwd.supabase.co';
 export const SUPABASE_ANON_KEY: string =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjeGtya2prbnNkeWVpdXBzdXdkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4NDI2MjAsImV4cCI6MjEwNjQxODYyMH0.koYLyd8Cw_QMqjUtEUYwq18MpnvE-4JbVU3kfxTQPA8';
+export const GOOGLE_CLIENT_ID: string =
+  '861668647553-5qidcarn3em3edro5vj5p6lbv27rh2n5.apps.googleusercontent.com';
 
 /**
  * Returns true if the user has provided real Supabase credentials.
