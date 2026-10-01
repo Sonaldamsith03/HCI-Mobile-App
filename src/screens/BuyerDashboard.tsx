@@ -214,7 +214,7 @@ export const BuyerDashboard: React.FC<{ hideBottomNav?: boolean }> = ({ hideBott
   // Cart Checkout Form State
   const [deliveryMethod, setDeliveryMethod] = useState<'Hub Pickup' | 'Direct Farm Courier'>('Direct Farm Courier');
   const [deliveryAddress, setDeliveryAddress] = useState(
-    userProfile.savedAddresses[0] || '144 Harvest Way, Apt 3B, Green Valley, CA'
+    userProfile.savedAddresses?.[0] || '144 Harvest Way, Apt 3B, Green Valley, CA'
   );
   const [paymentMethod, setPaymentMethod] = useState<'AgriPay Escrow' | 'Apple Pay' | 'Card'>('AgriPay Escrow');
   const [isSubmittingCheckout, setIsSubmittingCheckout] = useState(false);
@@ -340,7 +340,7 @@ export const BuyerDashboard: React.FC<{ hideBottomNav?: boolean }> = ({ hideBott
           >
             <Ionicons name="wallet-outline" size={14} color="#047857" />
             <Text style={styles.walletBalanceText}>
-              ${userProfile.walletBalance.toFixed(2)}
+              ${(userProfile.walletBalance ?? 240).toFixed(2)}
             </Text>
           </TouchableOpacity>
 
@@ -1044,7 +1044,7 @@ export const BuyerDashboard: React.FC<{ hideBottomNav?: boolean }> = ({ hideBott
                         paymentMethod === 'AgriPay Escrow' && styles.paymentMethodTextActive,
                       ]}
                     >
-                      AgriPay Escrow (${userProfile.walletBalance.toFixed(0)})
+                      AgriPay Escrow (${(userProfile.walletBalance ?? 240).toFixed(0)})
                     </Text>
                   </TouchableOpacity>
 
@@ -1483,7 +1483,7 @@ export const BuyerDashboard: React.FC<{ hideBottomNav?: boolean }> = ({ hideBott
                 <View>
                   <Text style={styles.walletCardLabel}>AGRIPAY ESCROW BALANCE</Text>
                   <Text style={styles.walletBalanceBig}>
-                    ${userProfile.walletBalance.toFixed(2)}
+                    ${(userProfile.walletBalance ?? 240).toFixed(2)}
                   </Text>
                   <Text style={styles.walletStatusSub}>
                     Institutional grade Multi-Sig vault
@@ -1568,13 +1568,13 @@ export const BuyerDashboard: React.FC<{ hideBottomNav?: boolean }> = ({ hideBott
             {/* Saved Delivery Addresses */}
             <Text style={[styles.sectionHeading, isDark && { color: '#FFFFFF' }]}>Saved Delivery Addresses</Text>
             <AgriCard style={{ padding: 14, marginBottom: 14 }}>
-              {userProfile.savedAddresses.map((addr, idx) => (
+              {(userProfile.savedAddresses || ['144 Harvest Way, Apt 3B, Green Valley, CA']).map((addr, idx) => (
                 <View
                   key={idx}
                   style={[
                     styles.addressItemRow,
-                    idx < userProfile.savedAddresses.length - 1 && styles.addressBorderBottom,
-                    idx < userProfile.savedAddresses.length - 1 && isDark && { borderBottomColor: 'rgba(255,255,255,0.08)' },
+                    idx < (userProfile.savedAddresses || []).length - 1 && styles.addressBorderBottom,
+                    idx < (userProfile.savedAddresses || []).length - 1 && isDark && { borderBottomColor: 'rgba(255,255,255,0.08)' },
                   ]}
                 >
                   <Ionicons name="home-outline" size={18} color={colors.forestGreenPrimary} />

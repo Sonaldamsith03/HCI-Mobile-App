@@ -87,6 +87,10 @@ export const AuthScreen: React.FC = () => {
         email: 'sonal.perera@gmail.com',
         phone: '+94 71 888 9999',
         role: 'BUYER',
+        walletBalance: 12500,
+        escrowBalance: 240,
+        savedAddresses: ['144 Harvest Way, Apt 3B, Green Valley, CA', 'Colombo 03, Western Province'],
+        defaultAddress: '144 Harvest Way, Apt 3B, Green Valley, CA',
         isLoggedIn: true,
       });
       setCurrentRole('BUYER');
@@ -98,6 +102,10 @@ export const AuthScreen: React.FC = () => {
         email: 'mateo@greenvalleyfarms.com',
         phone: '+94 77 123 4567',
         role: 'FARMER',
+        walletBalance: 24500,
+        escrowBalance: 0,
+        savedAddresses: ['Green Valley Farm Gate #4, Central Province'],
+        defaultAddress: 'Green Valley Farm Gate #4, Central Province',
         isLoggedIn: true,
       });
       setCurrentRole('FARMER');
@@ -112,7 +120,12 @@ export const AuthScreen: React.FC = () => {
       updateUserProfile({
         name: 'Administrator',
         email: 'admin@farmby.com',
+        phone: '+94 77 000 0000',
         role: 'ADMIN',
+        walletBalance: 50000,
+        escrowBalance: 128400,
+        savedAddresses: ['Platform Governance Hub, Colombo'],
+        defaultAddress: 'Platform Governance Hub, Colombo',
         isLoggedIn: true,
       });
       setCurrentRole('ADMIN');
@@ -196,6 +209,10 @@ export const AuthScreen: React.FC = () => {
           email: cleanEmail,
           phone: phone.trim(),
           role: selectedRole,
+          walletBalance: profile?.walletBalance ?? (selectedRole === 'FARMER' ? 24500 : 12500),
+          escrowBalance: profile?.escrowBalance ?? 0,
+          savedAddresses: profile?.savedAddresses ?? ['Central Delivery Hub #4B, Green Valley'],
+          defaultAddress: profile?.defaultAddress ?? 'Central Delivery Hub #4B, Green Valley',
           isLoggedIn: true,
         });
         setCurrentRole(selectedRole);
@@ -242,6 +259,10 @@ export const AuthScreen: React.FC = () => {
           name: resolvedName,
           email: cleanEmail,
           role: resolvedRole,
+          walletBalance: profile?.walletBalance ?? 12500,
+          escrowBalance: profile?.escrowBalance ?? 0,
+          savedAddresses: profile?.savedAddresses ?? ['Central Delivery Hub #4B, Green Valley'],
+          defaultAddress: profile?.defaultAddress ?? 'Central Delivery Hub #4B, Green Valley',
           isLoggedIn: true,
         });
         setCurrentRole(resolvedRole);

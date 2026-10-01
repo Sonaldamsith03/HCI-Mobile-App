@@ -12,7 +12,7 @@ import { useApp } from '../context/AppContext';
 
 export const MainTabsContainer: React.FC = () => {
   const route = useRoute<RouteProp<RootStackParamList, 'MainTabs'>>();
-  const { themeMode, currentBottomTab, setCurrentBottomTab } = useApp();
+  const { themeMode, currentBottomTab, setCurrentBottomTab, userProfile } = useApp();
   const isDark = themeMode === 'dark';
 
   // If route params specified a tab, sync it

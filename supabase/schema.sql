@@ -11,10 +11,10 @@ create extension if not exists "uuid-ossp";
 -- ----------------------------------------------------------------------------
 create table if not exists public.profiles (
   id uuid primary key default uuid_generate_v4(),
-  auth_user_id uuid references auth.users(id) on delete cascade,
+  auth_user_id uuid unique references auth.users(id) on delete cascade,
   name text not null,
   phone text,
-  email text,
+  email text unique,
   role text not null default 'BUYER' check (role in ('BUYER', 'FARMER', 'DRIVER', 'ADMIN')),
   avatar_url text,
   default_address text,
@@ -24,6 +24,18 @@ create table if not exists public.profiles (
   status text default 'active' check (status in ('active', 'banned', 'pending')),
   created_at timestamptz default now()
 );
+
+-- Ensure profiles constraints exist even if table was created previously
+do $$ 
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'profiles_email_unique'
+  ) then
+    alter table public.profiles add constraint profiles_email_unique unique (email);
+  end if;
+exception
+  when others then null;
+end $$;
 
 -- ----------------------------------------------------------------------------
 -- 2. PRODUCE LISTINGS

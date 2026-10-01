@@ -313,7 +313,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (savedMessages) setMessages(JSON.parse(savedMessages));
         if (savedCart) setCart(JSON.parse(savedCart));
         if (savedFavs) setFavorites(JSON.parse(savedFavs));
-        if (savedProfile) setUserProfile(JSON.parse(savedProfile));
+        if (savedProfile) {
+          try {
+            const parsed = JSON.parse(savedProfile);
+            setUserProfile({
+              ...INITIAL_USER_PROFILE,
+              ...parsed,
+              walletBalance:
+                parsed.walletBalance !== undefined && !isNaN(Number(parsed.walletBalance))
+                  ? Number(parsed.walletBalance)
+                  : INITIAL_USER_PROFILE.walletBalance ?? 240,
+              escrowBalance:
+                parsed.escrowBalance !== undefined && !isNaN(Number(parsed.escrowBalance))
+                  ? Number(parsed.escrowBalance)
+                  : INITIAL_USER_PROFILE.escrowBalance ?? 0,
+              savedAddresses:
+                Array.isArray(parsed.savedAddresses) && parsed.savedAddresses.length > 0
+                  ? parsed.savedAddresses
+                  : INITIAL_USER_PROFILE.savedAddresses ?? ['Colombo 03, Western Province'],
+              defaultAddress:
+                parsed.defaultAddress || INITIAL_USER_PROFILE.defaultAddress || 'Colombo 03, Western Province',
+            });
+          } catch {
+            setUserProfile(INITIAL_USER_PROFILE);
+          }
+        }
 
         // Cloud Sync: Fetch live Produce and Orders from Supabase if configured
         if (supabaseService.isConfigured()) {
@@ -572,9 +596,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // User Profile
   const updateUserProfile = (profile: Partial<UserProfile>) => {
     setUserProfile(prev => {
-      const updated = { ...prev, ...profile };
+      const updated: UserProfile = {
+        ...INITIAL_USER_PROFILE,
+        ...prev,
+        ...profile,
+        walletBalance:
+          profile.walletBalance !== undefined && !isNaN(Number(profile.walletBalance))
+            ? Number(profile.walletBalance)
+            : prev.walletBalance !== undefined && !isNaN(Number(prev.walletBalance))
+            ? Number(prev.walletBalance)
+            : INITIAL_USER_PROFILE.walletBalance ?? 240,
+        escrowBalance:
+          profile.escrowBalance !== undefined && !isNaN(Number(profile.escrowBalance))
+            ? Number(profile.escrowBalance)
+            : prev.escrowBalance !== undefined && !isNaN(Number(prev.escrowBalance))
+            ? Number(prev.escrowBalance)
+            : INITIAL_USER_PROFILE.escrowBalance ?? 0,
+        savedAddresses:
+          Array.isArray(profile.savedAddresses) && profile.savedAddresses.length > 0
+            ? profile.savedAddresses
+            : Array.isArray(prev.savedAddresses) && prev.savedAddresses.length > 0
+            ? prev.savedAddresses
+            : INITIAL_USER_PROFILE.savedAddresses ?? ['Colombo 03, Western Province'],
+        defaultAddress:
+          profile.defaultAddress ||
+          prev.defaultAddress ||
+          INITIAL_USER_PROFILE.defaultAddress ||
+          'Colombo 03, Western Province',
+      };
       persistData(STORAGE_KEYS.PROFILE, updated);
-      showToast('Profile updated successfully', 'success');
       return updated;
     });
   };

@@ -391,29 +391,68 @@ export const supabaseService = {
         return { user: null, profile: null, error: 'Sign up failed to return user data' };
       }
 
-      // Upsert profile record in public.profiles table
-      const { data: profileRecord, error: profileErr } = await supabase
-        .from('profiles')
-        .upsert(
-          {
-            auth_user_id: user.id,
-            name: profileData.name,
-            email: cleanEmail,
-            phone: profileData.phone || null,
-            role: profileData.role,
-            wallet_balance: profileData.role === 'FARMER' ? 24500 : 12500,
-            status: 'active',
-          },
-          { onConflict: 'email' }
-        )
-        .select()
-        .single();
+      // Safe profile creation/update in public.profiles table
+      let profileRecord: any = null;
+      try {
+        const { data: existing } = await supabase
+          .from('profiles')
+          .select('*')
+          .or(`auth_user_id.eq.${user.id},email.eq.${cleanEmail}`)
+          .maybeSingle();
 
-      if (profileErr) {
-        console.warn('Profile creation note:', profileErr.message);
+        if (existing) {
+          const { data: updated } = await supabase
+            .from('profiles')
+            .update({
+              auth_user_id: user.id,
+              name: profileData.name,
+              phone: profileData.phone || existing.phone,
+              role: profileData.role,
+            })
+            .eq('id', existing.id)
+            .select()
+            .single();
+          profileRecord = updated || existing;
+        } else {
+          const { data: inserted, error: insErr } = await supabase
+            .from('profiles')
+            .insert({
+              auth_user_id: user.id,
+              name: profileData.name,
+              email: cleanEmail,
+              phone: profileData.phone || null,
+              role: profileData.role,
+              wallet_balance: profileData.role === 'FARMER' ? 24500 : 12500,
+              escrow_balance: 0,
+              status: 'active',
+            })
+            .select()
+            .single();
+
+          if (insErr) {
+            console.warn('Profile insert warning:', insErr.message);
+          } else {
+            profileRecord = inserted;
+          }
+        }
+      } catch (profileErr: any) {
+        console.warn('Profile creation note:', profileErr?.message);
       }
 
-      return { user, profile: profileRecord || { ...profileData, email: cleanEmail }, error: null };
+      const formattedProfile = {
+        name: profileRecord?.name || profileData.name,
+        role: profileRecord?.role || profileData.role,
+        email: cleanEmail,
+        phone: profileRecord?.phone || profileData.phone || '',
+        avatarUrl: profileRecord?.avatar_url || '',
+        defaultAddress: profileRecord?.default_address || 'Central Delivery Hub #4B, Green Valley',
+        walletBalance: Number(profileRecord?.wallet_balance ?? (profileData.role === 'FARMER' ? 24500 : 12500)),
+        escrowBalance: Number(profileRecord?.escrow_balance ?? 0),
+        savedAddresses: [profileRecord?.default_address || 'Central Delivery Hub #4B, Green Valley'],
+        isLoggedIn: true,
+      };
+
+      return { user, profile: formattedProfile, error: null };
     } catch (err: any) {
       return { user: null, profile: null, error: err.message || 'Unexpected sign up failure' };
     }
@@ -450,10 +489,18 @@ export const supabaseService = {
         .or(`auth_user_id.eq.${user.id},email.eq.${cleanEmail}`)
         .maybeSingle();
 
-      const profile = profileRecord || {
-        name: user.user_metadata?.name || 'Verified User',
-        role: user.user_metadata?.role || 'BUYER',
-        email: cleanEmail,
+      const profile = {
+        id: profileRecord?.id,
+        name: profileRecord?.name || user.user_metadata?.name || 'Verified User',
+        role: profileRecord?.role || user.user_metadata?.role || 'BUYER',
+        email: profileRecord?.email || cleanEmail,
+        phone: profileRecord?.phone || user.user_metadata?.phone || '',
+        avatarUrl: profileRecord?.avatar_url || '',
+        defaultAddress: profileRecord?.default_address || 'Central Delivery Hub #4B, Green Valley',
+        walletBalance: Number(profileRecord?.wallet_balance ?? 12500),
+        escrowBalance: Number(profileRecord?.escrow_balance ?? 0),
+        savedAddresses: [profileRecord?.default_address || 'Central Delivery Hub #4B, Green Valley'],
+        isLoggedIn: true,
       };
 
       return { user, profile, error: null };

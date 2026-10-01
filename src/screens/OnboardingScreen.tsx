@@ -343,14 +343,14 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
                 <View style={[styles.statBox, isDark ? styles.cardDark : styles.cardLight]}>
                   <Text style={styles.statLabel}>AGRIPAY WALLET</Text>
                   <Text style={[styles.statValue, isDark ? styles.textWhite : styles.textBlack]}>
-                    ${userProfile.walletBalance.toFixed(2)}
+                    ${(userProfile?.walletBalance ?? 240).toFixed(2)}
                   </Text>
                   <Text style={styles.statSub}>Instant checkout</Text>
                 </View>
                 <View style={[styles.statBox, isDark ? styles.cardDark : styles.cardLight]}>
                   <Text style={styles.statLabel}>ESCROW HELD</Text>
                   <Text style={[styles.statValue, { color: '#06C167' }]}>
-                    ${userProfile.escrowBalance.toFixed(2)}
+                    ${(userProfile?.escrowBalance ?? 0).toFixed(2)}
                   </Text>
                   <Text style={styles.statSub}>Protected orders</Text>
                 </View>
@@ -483,14 +483,14 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
                 <TouchableOpacity
                   style={styles.menuItem}
                   activeOpacity={0.7}
-                  onPress={() => showToast('Address: ' + userProfile.defaultAddress, 'info')}
+                  onPress={() => showToast('Address: ' + (userProfile?.defaultAddress || 'Colombo 03, Western Province'), 'info')}
                 >
                   <View style={[styles.menuIconWrap, isDark ? styles.menuIconWrapDark : styles.menuIconWrapLight]}>
                     <Ionicons name="location-outline" size={18} color={isDark ? '#FFFFFF' : '#000000'} />
                   </View>
                   <View style={styles.menuContent}>
                     <Text style={[styles.menuTitle, isDark ? styles.textWhite : styles.textBlack]}>Saved Addresses</Text>
-                    <Text style={styles.menuSubtitle} numberOfLines={1}>{userProfile.defaultAddress}</Text>
+                    <Text style={styles.menuSubtitle} numberOfLines={1}>{userProfile?.defaultAddress || 'Colombo 03, Western Province'}</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#71717A" />
                 </TouchableOpacity>
