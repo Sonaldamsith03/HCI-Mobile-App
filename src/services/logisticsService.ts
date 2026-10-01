@@ -12,6 +12,7 @@ import {
   ProblemReport,
 } from '../types/logistics';
 import { calculateDeliveryQuote, recommendVehicleForCargo } from './pricingService';
+import { supabaseService } from './supabaseService';
 
 const STORAGE_KEYS = {
   DRIVERS: '@agriconnect_drivers_v1',
@@ -376,6 +377,16 @@ class LogisticsService {
 
   constructor() {
     this.loadFromStorage();
+    if (supabaseService.isConfigured()) {
+      supabaseService.subscribeToDeliveries(async () => {
+        const remote = await supabaseService.fetchDeliveries();
+        if (remote && remote.length > 0) {
+          this.deliveries = remote;
+          const list = [...this.deliveries];
+          this.deliveryListeners.forEach(fn => fn(list));
+        }
+      });
+    }
   }
 
   private async loadFromStorage() {
@@ -391,6 +402,14 @@ class LogisticsService {
       if (savedCurrentId) this.currentDriverId = savedCurrentId;
       if (savedDeliveries) this.deliveries = JSON.parse(savedDeliveries);
       if (savedNotifs) this.notifications = JSON.parse(savedNotifs);
+
+      // Cloud Sync: Fetch live deliveries from Supabase if configured
+      if (supabaseService.isConfigured()) {
+        const remoteDeliveries = await supabaseService.fetchDeliveries();
+        if (remoteDeliveries && remoteDeliveries.length > 0) {
+          this.deliveries = remoteDeliveries;
+        }
+      }
 
       this.notifyDeliveryListeners();
       this.notifyDriverListeners();
@@ -432,10 +451,17 @@ class LogisticsService {
     return () => this.requestAlertListeners.delete(listener);
   }
 
-  private notifyDeliveryListeners() {
+  private notifyDeliveryListeners(changedDelivery?: Delivery) {
     const list = [...this.deliveries];
     this.deliveryListeners.forEach(fn => fn(list));
     this.persist(STORAGE_KEYS.DELIVERIES, list);
+
+    // Sync changed delivery directly to Supabase cloud
+    if (changedDelivery && supabaseService.isConfigured()) {
+      supabaseService.upsertDelivery(changedDelivery).catch(err => {
+        console.warn('Supabase delivery upsert error:', err);
+      });
+    }
   }
 
   private notifyDriverListeners() {
@@ -722,7 +748,7 @@ class LogisticsService {
     };
 
     this.deliveries = [newDelivery, ...this.deliveries];
-    this.notifyDeliveryListeners();
+    this.notifyDeliveryListeners(newDelivery);
 
     // Trigger incoming alert to online drivers
     const current = this.getCurrentDriver();
@@ -795,7 +821,7 @@ class LogisticsService {
       return d;
     });
 
-    this.notifyDeliveryListeners();
+    this.notifyDeliveryListeners(this.getDeliveryById(deliveryId));
     this.notifyDriverListeners();
 
     // Notify Buyer and Farmer
@@ -931,7 +957,7 @@ class LogisticsService {
       });
     }
 
-    this.notifyDeliveryListeners();
+    this.notifyDeliveryListeners(this.getDeliveryById(deliveryId));
     this.notifyDriverListeners();
     return true;
   }
@@ -959,7 +985,7 @@ class LogisticsService {
       return d;
     });
 
-    this.notifyDeliveryListeners();
+    this.notifyDeliveryListeners(this.getDeliveryById(deliveryId));
     this.addNotification({
       recipientRole: 'DRIVER',
       type: 'system',
@@ -1011,7 +1037,7 @@ class LogisticsService {
       });
     }
 
-    this.notifyDeliveryListeners();
+    this.notifyDeliveryListeners(this.getDeliveryById(deliveryId));
     this.notifyDriverListeners();
     return true;
   }

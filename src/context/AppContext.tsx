@@ -27,6 +27,7 @@ import { getThemeColors, ThemeColors } from '../theme/colors';
 import { chatService } from '../services/chatService';
 import { logisticsService } from '../services/logisticsService';
 import { Delivery } from '../types/logistics';
+import { supabaseService } from '../services/supabaseService';
 
 interface AppContextType {
 
@@ -313,6 +314,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (savedCart) setCart(JSON.parse(savedCart));
         if (savedFavs) setFavorites(JSON.parse(savedFavs));
         if (savedProfile) setUserProfile(JSON.parse(savedProfile));
+
+        // Cloud Sync: Fetch live Produce and Orders from Supabase if configured
+        if (supabaseService.isConfigured()) {
+          try {
+            const [remoteProduce, remoteOrders] = await Promise.all([
+              supabaseService.fetchProduce(),
+              supabaseService.fetchOrders(),
+            ]);
+            if (remoteProduce && remoteProduce.length > 0) {
+              setProduceList(remoteProduce);
+              persistData(STORAGE_KEYS.PRODUCE, remoteProduce);
+            }
+            if (remoteOrders && remoteOrders.length > 0) {
+              setTransactions(remoteOrders);
+              persistData(STORAGE_KEYS.TRANSACTIONS, remoteOrders);
+            }
+          } catch (e) {
+            console.warn('Supabase initial fetch failed, using local storage cache:', e);
+          }
+        }
       } catch (err) {
         console.warn('Failed to load data from storage, using initial seed data', err);
       }
@@ -355,6 +376,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated = [newProduce, ...produceList];
     setProduceList(updated);
     await persistData(STORAGE_KEYS.PRODUCE, updated);
+
+    // Sync with Supabase cloud if configured
+    if (supabaseService.isConfigured()) {
+      supabaseService.insertProduce(cropData).catch(err => {
+        console.warn('Supabase insertProduce error:', err);
+      });
+    }
+
     showToast(`Published listing: ${newProduce.name}`, 'success');
   };
 
@@ -492,6 +521,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           deliveryInstructions: 'Call buyer upon arrival at gate.',
         }).catch(err => console.warn('Failed to dispatch logistics request for cart item', err));
       }
+
+      // Sync order with Supabase cloud if configured
+      if (supabaseService.isConfigured()) {
+        supabaseService.insertOrder(newTx).catch(err => {
+          console.warn('Supabase order insert error:', err);
+        });
+      }
     }
 
     const updatedTransactions = [...newTxList, ...transactions];
@@ -583,6 +619,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await persistData(STORAGE_KEYS.TRANSACTIONS, updatedTransactions);
 
     showToast(`Order for ${produce.name} placed with Escrow!`, 'success');
+
+    // Sync single order with Supabase cloud if configured
+    if (supabaseService.isConfigured()) {
+      supabaseService.insertOrder(newTx).catch(err => {
+        console.warn('Supabase order insert error:', err);
+      });
+    }
 
     // Automatically dispatch delivery request to Logistics Fleet if delivery selected
     if (deliveryMethod !== 'Self Pickup') {
