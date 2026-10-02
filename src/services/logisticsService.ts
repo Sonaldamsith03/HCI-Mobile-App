@@ -579,7 +579,7 @@ class LogisticsService {
         registrationNumber: data.registrationNumber,
         capacityKg: data.capacityKg,
         licenseNumber: data.licenseNumber,
-      }).catch(err => console.warn('Supabase registerDriverCloud error:', err));
+      }).catch((err: any) => console.warn('Supabase registerDriverCloud error:', err));
     }
 
     this.addNotification({

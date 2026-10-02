@@ -2,6 +2,34 @@ import { supabase, isSupabaseConfigured } from '../config/supabase';
 import { Produce, Transaction } from '../types';
 import { Delivery, Driver } from '../types/logistics';
 
+// ── JWT Payload Decoder (Works across Browser and React Native) ─────────────
+export function parseJwtPayload(token: string): any | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4 !== 0) {
+      base64 += '=';
+    }
+    if (typeof atob === 'function') {
+      try {
+        return JSON.parse(atob(base64));
+      } catch {
+        const jsonStr = decodeURIComponent(
+          atob(base64)
+            .split('')
+            .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+            .join('')
+        );
+        return JSON.parse(jsonStr);
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * ============================================================================
  * SUPABASE CLOUD DATA SERVICE
@@ -585,12 +613,19 @@ export const supabaseService = {
   },
 
   // ── Google OAuth & Social Auth ──────────────────────────────────────────
-  async signInWithGoogleOAuth(): Promise<{ data: any; error: string | null }> {
+  async signInWithGoogleOAuth(customRedirectTo?: string): Promise<{ data: any; error: string | null }> {
     if (!isSupabaseConfigured()) {
       return { data: null, error: 'Supabase is not configured' };
     }
     try {
-      const redirectTo = typeof window !== 'undefined' && window.location ? window.location.origin : undefined;
+      let redirectTo = customRedirectTo;
+      if (!redirectTo) {
+        if (typeof window !== 'undefined' && window.location && window.location.origin) {
+          redirectTo = window.location.origin;
+        } else {
+          redirectTo = 'agriconnect://auth-callback';
+        }
+      }
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -605,6 +640,186 @@ export const supabaseService = {
     } catch (err: any) {
       return { data: null, error: err.message || 'Failed to initiate Google OAuth' };
     }
+  },
+
+  async handleOAuthCallbackUrl(url: string): Promise<{ user: any; profile: any; error: string | null }> {
+    if (!isSupabaseConfigured()) {
+      return { user: null, profile: null, error: 'Supabase is not configured' };
+    }
+    try {
+      // 0. Check for verified_email parameter (passed from OAuth web bridge)
+      const verifiedEmailMatch = url.match(/[?&]verified_email=([^&#]+)/);
+      if (verifiedEmailMatch && verifiedEmailMatch[1]) {
+        const cleanEmail = decodeURIComponent(verifiedEmailMatch[1]).trim().toLowerCase();
+        const nameMatch = url.match(/[?&]name=([^&#]+)/);
+        const roleMatch = url.match(/[?&]role=([^&#]+)/);
+        const resolvedName = nameMatch && nameMatch[1] ? decodeURIComponent(nameMatch[1]) : cleanEmail.split('@')[0];
+        const resolvedRole = (roleMatch && roleMatch[1] ? decodeURIComponent(roleMatch[1]) : 'BUYER') as any;
+
+        // Create immediate profile for 0ms lag
+        const immediateProfile = {
+          id: `usr-${cleanEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+          name: resolvedName,
+          email: cleanEmail,
+          role: resolvedRole,
+          avatarUrl: '',
+          walletBalance: resolvedRole === 'FARMER' ? 24500 : 12500,
+          escrowBalance: 0,
+          savedAddresses: ['Central Delivery Hub, Colombo'],
+          defaultAddress: 'Central Delivery Hub, Colombo',
+          isLoggedIn: true,
+        };
+
+        // Sync with Supabase cloud database in background
+        this.loginWithGoogleAccount({
+          email: cleanEmail,
+          name: resolvedName,
+          role: resolvedRole,
+        }).catch((e: any) => console.warn('Background Google sync note:', e));
+
+        return { user: { email: cleanEmail, id: immediateProfile.id }, profile: immediateProfile, error: null };
+      }
+
+      // 1. Check for authorization code (PKCE flow)
+      const codeMatch = url.match(/[?&]code=([^&#]+)/);
+      if (codeMatch && codeMatch[1]) {
+        const authCode = decodeURIComponent(codeMatch[1]);
+        try {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(authCode);
+          if (!error && data?.user) {
+            const { profile } = await this.syncUserProfileAfterAuth(data.user);
+            return { user: data.user, profile, error: null };
+          }
+        } catch (codeErr) {
+          console.warn('exchangeCodeForSession note:', codeErr);
+        }
+      }
+
+      // 2. Check for hash fragment access_token / refresh_token (Implicit flow)
+      const accessTokenMatch = url.match(/[#&?]access_token=([^&#]+)/);
+      const refreshTokenMatch = url.match(/[#&?]refresh_token=([^&#]+)/);
+
+      if (accessTokenMatch && accessTokenMatch[1]) {
+        const accessToken = decodeURIComponent(accessTokenMatch[1]);
+        const refreshToken = refreshTokenMatch && refreshTokenMatch[1] ? decodeURIComponent(refreshTokenMatch[1]) : '';
+
+        // Try direct JWT payload decode first (guaranteed instant success without network errors)
+        const jwtPayload = parseJwtPayload(accessToken);
+        if (jwtPayload && jwtPayload.email) {
+          const jwtEmail = jwtPayload.email.trim().toLowerCase();
+          const jwtName =
+            jwtPayload.user_metadata?.full_name ||
+            jwtPayload.user_metadata?.name ||
+            jwtEmail.split('@')[0];
+
+          const jwtProfile = {
+            id: jwtPayload.sub || `usr-${jwtEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+            name: jwtName,
+            email: jwtEmail,
+            avatarUrl: jwtPayload.user_metadata?.avatar_url || jwtPayload.user_metadata?.picture || '',
+            role: 'BUYER' as const,
+            walletBalance: 12500,
+            escrowBalance: 0,
+            savedAddresses: ['Central Delivery Hub, Colombo'],
+            defaultAddress: 'Central Delivery Hub, Colombo',
+            isLoggedIn: true,
+          };
+
+          // Also set the session in Supabase background
+          if (refreshToken) {
+            supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).catch(() => {});
+          }
+
+          // Sync cloud profile in background
+          this.loginWithGoogleAccount({
+            email: jwtEmail,
+            name: jwtName,
+            avatarUrl: jwtProfile.avatarUrl,
+            role: 'BUYER',
+          }).catch((e: any) => console.warn('Background Google sync note:', e));
+
+          return {
+            user: { email: jwtEmail, id: jwtProfile.id },
+            profile: jwtProfile,
+            error: null,
+          };
+        }
+
+        // Standard Supabase setSession fallback
+        try {
+          if (refreshToken) {
+            const { data, error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (!error && data?.user) {
+              const { profile } = await this.syncUserProfileAfterAuth(data.user);
+              return { user: data.user, profile, error: null };
+            }
+          }
+        } catch (sessErr) {
+          console.warn('setSession note:', sessErr);
+        }
+      }
+
+      // 3. Fallback: check current session user
+      const currentUser = await this.getCurrentSessionUser();
+      if (currentUser) {
+        const { profile } = await this.syncUserProfileAfterAuth(currentUser);
+        return { user: currentUser, profile, error: null };
+      }
+
+      return { user: null, profile: null, error: 'No authentication tokens found in redirect URL' };
+    } catch (err: any) {
+      return { user: null, profile: null, error: err?.message || 'Failed to process authentication redirect' };
+    }
+  },
+
+  async syncUserProfileAfterAuth(user: any): Promise<{ profile: any }> {
+    const cleanEmail = (user.email || '').trim().toLowerCase();
+    const metadataName = user.user_metadata?.full_name || user.user_metadata?.name || cleanEmail.split('@')[0];
+    const metadataAvatar = user.user_metadata?.avatar_url || user.user_metadata?.picture || '';
+    const metadataRole = (user.user_metadata?.role as any) || 'BUYER';
+
+    let { data: profileRecord } = await supabase
+      .from('profiles')
+      .select('*')
+      .or(`auth_user_id.eq.${user.id},email.eq.${cleanEmail}`)
+      .maybeSingle();
+
+    if (!profileRecord) {
+      const { data: created } = await supabase
+        .from('profiles')
+        .insert({
+          auth_user_id: user.id,
+          name: metadataName,
+          email: cleanEmail,
+          avatar_url: metadataAvatar,
+          role: metadataRole,
+          wallet_balance: metadataRole === 'FARMER' ? 24500 : 12500,
+          escrow_balance: 0,
+          status: 'active',
+        })
+        .select()
+        .single();
+      profileRecord = created;
+    }
+
+    const formatted = {
+      id: profileRecord?.id || user.id,
+      name: profileRecord?.name || metadataName,
+      role: profileRecord?.role || metadataRole,
+      email: profileRecord?.email || cleanEmail,
+      phone: profileRecord?.phone || '',
+      avatarUrl: profileRecord?.avatar_url || metadataAvatar,
+      defaultAddress: profileRecord?.default_address || 'Central Delivery Hub, Colombo',
+      walletBalance: Number(profileRecord?.wallet_balance ?? 12500),
+      escrowBalance: Number(profileRecord?.escrow_balance ?? 0),
+      savedAddresses: [profileRecord?.default_address || 'Central Delivery Hub, Colombo'],
+      isLoggedIn: true,
+    };
+
+    return { profile: formatted };
   },
 
   async loginWithGoogleAccount(googleAccount: {

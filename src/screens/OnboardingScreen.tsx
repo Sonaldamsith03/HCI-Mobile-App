@@ -297,7 +297,7 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
             ) : (
               <View style={styles.demoBadge}>
                 <View style={styles.demoDot} />
-                <Text style={styles.demoBadgeText}>DEMO MODE</Text>
+                <Text style={styles.demoBadgeText}>GUEST</Text>
               </View>
             )}
           </View>
@@ -553,7 +553,7 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
                         <Text style={{ fontSize: 9, fontWeight: '800', color: '#FFFFFF' }}>AUTH</Text>
                       </View>
                     </View>
-                    <Text style={styles.menuSubtitle}>Log in with another email/role or test demo profiles</Text>
+                    <Text style={styles.menuSubtitle}>Sign in to a different account or switch roles</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color="#3B82F6" />
                 </TouchableOpacity>

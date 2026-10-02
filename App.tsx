@@ -7,6 +7,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppProvider } from './src/context/AppContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { ToastNotification } from './src/components/ToastNotification';
+import { OAuthWebRedirect } from './src/components/OAuthWebRedirect';
 import { colors } from './src/theme/colors';
 
 // Inject modern clean Apple SF Pro typography & Icon Fonts on Web
@@ -82,6 +83,7 @@ function AppContent() {
           <View style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
             <RootNavigator />
             <ToastNotification />
+            <OAuthWebRedirect />
           </View>
           <AppleHomeIndicator />
         </View>
@@ -94,6 +96,7 @@ function AppContent() {
       <StatusBar style="dark" />
       <RootNavigator />
       <ToastNotification />
+      <OAuthWebRedirect />
     </View>
   );
 }

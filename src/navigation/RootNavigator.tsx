@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
+import { navigationRef } from './navigationRef';
 import { MainTabsContainer } from '../screens/MainTabsContainer';
 import { LandingScreen } from '../screens/LandingScreen';
 import { OnboardingScreen } from '../screens/OnboardingScreen';
@@ -27,7 +28,7 @@ export const RootNavigator: React.FC = () => {
   const { navTransitionDirection } = useApp();
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         initialRouteName="MainTabs"
         screenOptions={{

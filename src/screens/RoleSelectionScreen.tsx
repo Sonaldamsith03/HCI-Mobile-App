@@ -151,6 +151,53 @@ export const RoleSelectionScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hid
           )}
         </View>
 
+        {/* Signed In User Status Banner (if authenticated) */}
+        {userProfile.isLoggedIn && (
+          <TouchableOpacity
+            style={[
+              styles.userActiveCard,
+              isDark ? styles.userActiveCardDark : styles.userActiveCardLight,
+            ]}
+            onPress={() => {
+              const targetRole =
+                userProfile.role === 'COURIER'
+                  ? 'COURIER'
+                  : userProfile.role === 'FARMER'
+                  ? 'FARMER'
+                  : 'BUYER';
+              const targetRoute =
+                targetRole === 'COURIER'
+                  ? 'LogisticsDashboard'
+                  : targetRole === 'FARMER'
+                  ? 'FarmerDashboard'
+                  : 'BuyerDashboard';
+              handleSelectRole(targetRole, targetRoute as any);
+            }}
+            activeOpacity={0.85}
+          >
+            <View style={styles.userActiveAvatarWrap}>
+              <Ionicons name="person-circle" size={38} color="#06C167" />
+            </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={[styles.userActiveName, isDark && styles.textWhite]}>
+                  {userProfile.name}
+                </Text>
+                <View style={styles.signedInBadge}>
+                  <Text style={styles.signedInBadgeText}>ACTIVE ACCOUNT</Text>
+                </View>
+              </View>
+              <Text style={[styles.userActiveEmail, isDark && styles.textSecondaryDark]}>
+                {userProfile.email} • {userProfile.role || 'BUYER'}
+              </Text>
+            </View>
+            <View style={styles.userActiveAction}>
+              <Text style={styles.userActiveActionText}>Go to App</Text>
+              <Ionicons name="arrow-forward" size={15} color="#06C167" />
+            </View>
+          </TouchableOpacity>
+        )}
+
         {/* SECTION 1: Core Portals (Uber 2x2 Bento Tile Grid) */}
         <View style={styles.sectionBlock}>
           <View style={styles.sectionHeaderRow}>
@@ -338,8 +385,8 @@ export const RoleSelectionScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hid
                 <Ionicons name="key" size={22} color="#3B82F6" />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.cloudAccessTitle, isDark && styles.textWhite]}>Cloud Sign In & Register</Text>
-                <Text style={styles.cloudAccessDesc}>Buyer, Farmer, Driver auth & instant demo profiles</Text>
+                <Text style={[styles.cloudAccessTitle, isDark && styles.textWhite]}>Account Authentication</Text>
+                <Text style={styles.cloudAccessDesc}>Sign in or create a Buyer, Farmer, or Driver account</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#3B82F6" />
             </TouchableOpacity>
@@ -986,5 +1033,61 @@ const styles = StyleSheet.create({
   cloudAccessDesc: {
     fontSize: 11,
     color: '#64748B',
+  },
+  userActiveCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+  },
+  userActiveCardDark: {
+    backgroundColor: '#161618',
+    borderColor: 'rgba(6, 193, 103, 0.35)',
+  },
+  userActiveCardLight: {
+    backgroundColor: '#F0FDF4',
+    borderColor: 'rgba(6, 193, 103, 0.4)',
+  },
+  userActiveAvatarWrap: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userActiveName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  signedInBadge: {
+    backgroundColor: 'rgba(6, 193, 103, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  signedInBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#06C167',
+    letterSpacing: 0.3,
+  },
+  userActiveEmail: {
+    fontSize: 12,
+    color: '#545454',
+    marginTop: 2,
+  },
+  userActiveAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(6, 193, 103, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  userActiveActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#06C167',
   },
 });

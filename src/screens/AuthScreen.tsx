@@ -13,9 +13,8 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
-  Modal,
-  Image,
   Linking,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,46 +25,11 @@ import { useApp } from '../context/AppContext';
 import { supabaseService } from '../services/supabaseService';
 import { logisticsService } from '../services/logisticsService';
 import { colors } from '../theme/colors';
-import { Logo } from '../components/Logo';
-
-interface GoogleAccountOption {
-  name: string;
-  email: string;
-  avatarUrl: string;
-  subtitle: string;
-}
-
-const GOOGLE_ACCOUNTS: GoogleAccountOption[] = [
-  {
-    name: 'Sonal Perera',
-    email: 'sonal.perera@gmail.com',
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-    subtitle: 'Google Account • Verified Purchaser',
-  },
-  {
-    name: 'Mateo Gutierrez',
-    email: 'mateo.gutierrez@gmail.com',
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
-    subtitle: 'Google Account • Certified Grower',
-  },
-  {
-    name: 'Kasun Perera',
-    email: 'kasun.perera@gmail.com',
-    avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80',
-    subtitle: 'Google Account • Fleet Transport Courier',
-  },
-  {
-    name: 'Elena Vance',
-    email: 'elena.vance@gmail.com',
-    avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80',
-    subtitle: 'Google Account • Agricultural Partner',
-  },
-];
 
 export const AuthScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'Auth'>>();
-  const { themeMode, userProfile, updateUserProfile, setCurrentRole, showToast } = useApp();
+  const { userProfile, themeMode, toggleThemeMode, updateUserProfile, setCurrentRole, showToast } = useApp();
   const isDark = themeMode === 'dark';
 
   // Auth Modes & Selected Role
@@ -74,21 +38,14 @@ export const AuthScreen: React.FC = () => {
     route.params?.initialRole || 'BUYER'
   );
 
-  // Form State
+  // Form Fields
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSendingMagicLink, setIsSendingMagicLink] = useState(false);
-
-  // Google Modal State
-  const [showGoogleModal, setShowGoogleModal] = useState(false);
-  const [customGoogleEmail, setCustomGoogleEmail] = useState('');
-  const [customGoogleName, setCustomGoogleName] = useState('');
-  const [showCustomGoogleInput, setShowCustomGoogleInput] = useState(false);
+  const [focusedField, setFocusedField] = useState<string | null>(null);
 
   // Farmer specific fields
   const [farmName, setFarmName] = useState('');
@@ -100,220 +57,221 @@ export const AuthScreen: React.FC = () => {
   const [regPlate, setRegPlate] = useState('');
   const [capacityKg, setCapacityKg] = useState('1200');
 
+  // Loading States
+  const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isSendingMagicLink, setIsSendingMagicLink] = useState(false);
+
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
+  const slideAnim = useRef(new Animated.Value(14)).current;
+  const buttonScale = useRef(new Animated.Value(1)).current;
 
+  // Trigger smooth transition whenever role or auth mode changes
   useEffect(() => {
+    fadeAnim.setValue(0);
+    slideAnim.setValue(14);
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
+        duration: 220,
         easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
       }),
       Animated.timing(slideAnim, {
         toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
+        duration: 220,
         easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
       }),
     ]).start();
   }, [authMode, selectedRole]);
 
+  // Watch for authenticated session state (e.g. from background deep link or OAuth redirect)
   useEffect(() => {
-    if (showGoogleModal && email && !customGoogleEmail) {
-      setCustomGoogleEmail(email.trim());
+    if (userProfile.isLoggedIn) {
+      const resolvedRole: UserRole =
+        userProfile.role === 'COURIER'
+          ? 'COURIER'
+          : userProfile.role === 'FARMER'
+          ? 'FARMER'
+          : 'BUYER';
+      setCurrentRole(resolvedRole);
+      if (resolvedRole === 'COURIER') {
+        navigation.navigate('DriverDashboard');
+      } else if (resolvedRole === 'FARMER') {
+        navigation.navigate('FarmerDashboard');
+      } else {
+        navigation.navigate('BuyerDashboard');
+      }
     }
-  }, [showGoogleModal, email]);
+  }, [userProfile.isLoggedIn, userProfile.role]);
 
-  // Quick Demo Logins
-  const handleQuickDemo = async (role: 'BUYER' | 'FARMER' | 'COURIER' | 'ADMIN') => {
-    setIsLoading(true);
-
-    if (role === 'BUYER') {
-      updateUserProfile({
-        name: 'Sonal Perera',
-        email: 'sonal.perera@gmail.com',
-        phone: '+94 71 888 9999',
-        role: 'BUYER',
-        walletBalance: 12500,
-        escrowBalance: 240,
-        savedAddresses: ['144 Harvest Way, Apt 3B, Green Valley, CA', 'Colombo 03, Western Province'],
-        defaultAddress: '144 Harvest Way, Apt 3B, Green Valley, CA',
-        isLoggedIn: true,
-      });
-      setCurrentRole('BUYER');
-      showToast('Logged in as Verified Buyer (Sonal Perera)', 'success');
-      navigation.navigate('BuyerDashboard');
-    } else if (role === 'FARMER') {
-      updateUserProfile({
-        name: 'Mateo Gutierrez',
-        email: 'mateo@greenvalleyfarms.com',
-        phone: '+94 77 123 4567',
-        role: 'FARMER',
-        walletBalance: 24500,
-        escrowBalance: 0,
-        savedAddresses: ['Green Valley Farm Gate #4, Central Province'],
-        defaultAddress: 'Green Valley Farm Gate #4, Central Province',
-        isLoggedIn: true,
-      });
-      setCurrentRole('FARMER');
-      showToast('Logged in as Verified Farmer (Mateo Gutierrez)', 'success');
-      navigation.navigate('FarmerDashboard');
-    } else if (role === 'COURIER') {
-      logisticsService.switchDriver('drv-kasun');
-      setCurrentRole('COURIER');
-      showToast('Logged in as Fleet Driver (Kasun Perera - Truck)', 'success');
-      navigation.navigate('DriverDashboard');
-    } else if (role === 'ADMIN') {
-      updateUserProfile({
-        name: 'Administrator',
-        email: 'admin@farmby.com',
-        phone: '+94 77 000 0000',
-        role: 'ADMIN',
-        walletBalance: 50000,
-        escrowBalance: 128400,
-        savedAddresses: ['Platform Governance Hub, Colombo'],
-        defaultAddress: 'Platform Governance Hub, Colombo',
-        isLoggedIn: true,
-      });
-      setCurrentRole('ADMIN');
-      showToast('Logged in as Platform Administrator 🛡️', 'success');
-      navigation.navigate('AdminDashboard');
-    }
-
-    setIsLoading(false);
-  };
-
-  // Google Login Handler
-  const handleSelectGoogleAccount = async (account: { name: string; email: string; avatarUrl?: string }) => {
-    setIsLoading(true);
-    setShowGoogleModal(false);
-
-    const cloudRole: 'BUYER' | 'FARMER' | 'DRIVER' =
-      selectedRole === 'COURIER' ? 'DRIVER' : selectedRole === 'FARMER' ? 'FARMER' : 'BUYER';
-
-    const { profile, error } = await supabaseService.loginWithGoogleAccount({
-      name: account.name,
-      email: account.email,
-      avatarUrl: account.avatarUrl,
-      role: cloudRole,
-    });
-
-    if (error) {
-      setIsLoading(false);
-      showToast(error, 'warn');
-      return;
-    }
-
-    updateUserProfile({
-      name: profile.name,
-      email: profile.email,
-      avatarUrl: profile.avatarUrl,
-      role: selectedRole,
-      walletBalance: profile.walletBalance,
-      escrowBalance: profile.escrowBalance,
-      savedAddresses: profile.savedAddresses,
-      defaultAddress: profile.defaultAddress,
-      isLoggedIn: true,
-    });
-    setCurrentRole(selectedRole);
-
-    if (selectedRole === 'COURIER') {
-      logisticsService.loginDriver(profile.email);
-    }
-
-    setIsLoading(false);
-    showToast(`Signed in with Google as ${profile.name}! 🚀`, 'success');
-
-    if (selectedRole === 'COURIER') {
-      navigation.navigate('DriverDashboard');
-    } else if (selectedRole === 'FARMER') {
-      navigation.navigate('FarmerDashboard');
-    } else {
-      navigation.navigate('BuyerDashboard');
-    }
-  };
-
-  // Google Continue Button on main screen
-  const handleContinueWithGoogle = async () => {
-    // 1. If user already typed an email into the input field:
-    const cleanEmail = email.trim().toLowerCase();
-    if (cleanEmail && cleanEmail.includes('@')) {
-      await handleSelectGoogleAccount({
-        name: fullName.trim() || cleanEmail.split('@')[0],
-        email: cleanEmail,
-      });
-      return;
-    }
-
-    // 2. Launch Google Browser OAuth with the credentials configured
-    setIsLoading(true);
-    const { data, error } = await supabaseService.signInWithGoogleOAuth();
-    setIsLoading(false);
-
-    if (!error && data?.url) {
-      try {
-        const canOpen = await Linking.canOpenURL(data.url).catch(() => false);
-        if (canOpen) {
-          await Linking.openURL(data.url);
-          showToast('Opening Google Sign-In...', 'info');
+  // Deep link listener for incoming OAuth redirects from Safari / browser
+  useEffect(() => {
+    const handleUrlEvent = async ({ url }: { url: string }) => {
+      if (!url) return;
+      if (
+        url.includes('auth-callback') ||
+        url.includes('verified_email') ||
+        url.includes('access_token') ||
+        url.includes('code=')
+      ) {
+        setIsLoading(true);
+        const { profile, error } = await supabaseService.handleOAuthCallbackUrl(url);
+        setIsLoading(false);
+        if (error) {
+          Alert.alert('Google Sign-In Notice', error);
           return;
         }
-      } catch (err) {
-        console.warn('Linking error:', err);
+        if (profile) {
+          updateUserProfile(profile);
+          const resolvedRole: UserRole =
+            profile.role === 'DRIVER' ? 'COURIER' : profile.role === 'FARMER' ? 'FARMER' : 'BUYER';
+          setCurrentRole(resolvedRole);
+          showToast(`Welcome, ${profile.name}! 🚀`, 'success');
+          if (resolvedRole === 'COURIER') {
+            navigation.navigate('DriverDashboard');
+          } else if (resolvedRole === 'FARMER') {
+            navigation.navigate('FarmerDashboard');
+          } else {
+            navigation.navigate('BuyerDashboard');
+          }
+        }
       }
-    }
+    };
 
-    // 3. Fallback: Open Google Account selector modal smoothly
-    setCustomGoogleEmail(email || '');
-    setShowGoogleModal(true);
+    const sub = Linking.addEventListener('url', handleUrlEvent);
+    Linking.getInitialURL().then(url => {
+      if (url) handleUrlEvent({ url });
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, []);
+
+  // Micro-animation for primary CTA touch
+  const handlePressIn = () => {
+    Animated.spring(buttonScale, {
+      toValue: 0.97,
+      useNativeDriver: true,
+      speed: 40,
+      bounciness: 0,
+    }).start();
   };
 
-  // Custom Google Account submission from modal
-  const handleCustomGoogleSubmit = () => {
-    const candidateEmail = (customGoogleEmail.trim() || email.trim()).toLowerCase();
-    if (!candidateEmail || !candidateEmail.includes('@')) {
-      showToast('Please enter your Google email address (e.g. name@gmail.com)', 'warn');
+  const handlePressOut = () => {
+    Animated.spring(buttonScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 30,
+      bounciness: 4,
+    }).start();
+  };
+
+  // Google Modal State
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
+  const [googleEmailInput, setGoogleEmailInput] = useState('');
+
+  // ── Execute Direct Google Account Auth (No Broken Redirects) ───────────
+  const executeGoogleLogin = async (candidateEmail: string) => {
+    const cleanEmail = candidateEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      showToast('Please enter a valid Google email address', 'warn');
       return;
     }
-    const derivedName = customGoogleName.trim() || fullName.trim() || candidateEmail.split('@')[0];
-    handleSelectGoogleAccount({
-      name: derivedName,
-      email: candidateEmail,
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-    });
-  };
 
-  // Live Supabase OAuth via Browser from modal
-  const handleBrowserGoogleOAuth = async () => {
-    setIsLoading(true);
+    setIsGoogleLoading(true);
     setShowGoogleModal(false);
-    const { data, error } = await supabaseService.signInWithGoogleOAuth();
-    setIsLoading(false);
-    if (error) {
-      Alert.alert(
-        'Google OAuth Notice',
-        `${error}\n\nTip: Google Client ID & Secret must be enabled in Supabase Authentication -> Providers -> Google.`
-      );
-    } else if (data?.url) {
-      try {
-        await Linking.openURL(data.url);
-        showToast('Opening Google Authorization...', 'info');
-      } catch (e: any) {
-        Alert.alert('Browser Open Error', e.message || 'Could not open browser');
+
+    try {
+      const cloudRole: 'BUYER' | 'FARMER' | 'DRIVER' =
+        selectedRole === 'FARMER' ? 'FARMER' : selectedRole === 'COURIER' ? 'DRIVER' : 'BUYER';
+
+      const derivedName = fullName.trim() || cleanEmail.split('@')[0];
+
+      const { profile, error } = await supabaseService.loginWithGoogleAccount({
+        email: cleanEmail,
+        name: derivedName,
+        role: cloudRole,
+      });
+
+      setIsGoogleLoading(false);
+
+      if (error) {
+        Alert.alert('Google Sign-In Notice', error);
+        return;
       }
-    } else {
-      showToast('OAuth initiated', 'info');
+
+      if (profile) {
+        updateUserProfile(profile);
+        setCurrentRole(selectedRole);
+
+        if (selectedRole === 'COURIER') {
+          logisticsService.loginDriver(cleanEmail);
+        }
+
+        showToast(`Signed in with Google as ${profile.name}! 🚀`, 'success');
+
+        if (selectedRole === 'COURIER') {
+          navigation.navigate('DriverDashboard');
+        } else if (selectedRole === 'FARMER') {
+          navigation.navigate('FarmerDashboard');
+        } else {
+          navigation.navigate('BuyerDashboard');
+        }
+      }
+    } catch (err: any) {
+      setIsGoogleLoading(false);
+      Alert.alert('Google Authentication Error', err?.message || 'Could not authenticate Google account.');
     }
   };
 
-  // Magic Link Email Service
+  // Google Continue Button: if email is present, signs in immediately; otherwise prompts for email
+  const handleContinueWithGoogle = () => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail && cleanEmail.includes('@')) {
+      executeGoogleLogin(cleanEmail);
+    } else {
+      setGoogleEmailInput('');
+      setShowGoogleModal(true);
+    }
+  };
+
+  // Launch browser OAuth from modal with local web IP (valid http URL)
+  const handleBrowserOAuthFromModal = async () => {
+    setShowGoogleModal(false);
+    setIsGoogleLoading(true);
+    try {
+      const redirectUri =
+        typeof window !== 'undefined' && window.location && window.location.origin
+          ? window.location.origin
+          : 'http://172.20.10.2:8081';
+
+      const { data, error } = await supabaseService.signInWithGoogleOAuth(redirectUri);
+      setIsGoogleLoading(false);
+
+      if (error) {
+        Alert.alert('Google Sign-In', error);
+        return;
+      }
+
+      if (data?.url) {
+        await Linking.openURL(data.url);
+      }
+    } catch (err: any) {
+      setIsGoogleLoading(false);
+      Alert.alert('Browser Error', err?.message || 'Could not open browser');
+    }
+  };
+
+  // ── Passwordless Magic Link Email Service ──────────────────────────────
   const handleSendMagicLink = async () => {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
-      showToast('Please enter your email address in the field above', 'warn');
+      showToast('Please enter your email address first', 'warn');
+      setFocusedField('email');
       return;
     }
 
@@ -324,61 +282,75 @@ export const AuthScreen: React.FC = () => {
     if (success) {
       Alert.alert(
         'Magic Link Sent! ✉️',
-        `Supabase Email Service has sent a secure, one-click sign-in link to:\n\n${cleanEmail}\n\nCheck your email inbox or spam folder to authenticate.`
+        `A secure, single-use login link has been dispatched to:\n\n${cleanEmail}\n\nTap the link inside your email to sign in automatically.`
       );
-      showToast(`Magic login link sent to ${cleanEmail}!`, 'success');
+      showToast(`Magic login link sent to ${cleanEmail}`, 'success');
     } else {
       Alert.alert('Email Service Notice', error || 'Failed to dispatch magic link email.');
     }
   };
 
-  // Password Reset Email Service
+  // ── Password Reset Email Service ────────────────────────────────────────
   const handleSendPasswordReset = async () => {
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       showToast('Please enter your account email in the box first', 'warn');
+      setFocusedField('email');
       return;
     }
 
     const { success, error } = await supabaseService.sendPasswordReset(cleanEmail);
     if (success) {
       Alert.alert(
-        'Password Reset Email Dispatched! 🔑',
-        `A password recovery email has been sent to ${cleanEmail}. Click the link inside to set a new password.`
+        'Password Recovery Dispatched 🔑',
+        `A password reset link has been emailed to:\n\n${cleanEmail}\n\nOpen the link to securely choose a new password.`
       );
       showToast(`Password reset link emailed to ${cleanEmail}`, 'success');
     } else {
-      Alert.alert('Email Reset Note', error || 'Failed to send password reset email.');
+      Alert.alert('Recovery Notice', error || 'Failed to dispatch password recovery email.');
     }
   };
 
-  // Submit Cloud or Local Auth
+  // ── Form Validation & Submission ────────────────────────────────────────
   const handleSubmit = async () => {
     const cleanEmail = email.trim().toLowerCase();
 
-    if (!cleanEmail) {
-      showToast('Please enter your email address', 'warn');
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      showToast('Please enter a valid email address', 'warn');
+      setFocusedField('email');
       return;
     }
+
     if (!password.trim()) {
       showToast('Please enter your password', 'warn');
+      setFocusedField('password');
       return;
     }
+
     if (authMode === 'signup') {
       if (!fullName.trim()) {
         showToast('Please enter your full name', 'warn');
+        setFocusedField('fullName');
         return;
       }
       if (password.length < 6) {
         showToast('Password must be at least 6 characters', 'warn');
+        setFocusedField('password');
         return;
       }
       if (password !== confirmPassword) {
         showToast('Passwords do not match', 'warn');
+        setFocusedField('confirmPassword');
+        return;
+      }
+      if (selectedRole === 'FARMER' && !farmName.trim()) {
+        showToast('Please enter your Farm or Orchard name', 'warn');
+        setFocusedField('farmName');
         return;
       }
       if (selectedRole === 'COURIER' && (!vehicleModel.trim() || !regPlate.trim())) {
-        showToast('Please provide vehicle model and registration plate', 'warn');
+        showToast('Please provide your vehicle model and registration plate', 'warn');
+        setFocusedField('vehicleModel');
         return;
       }
     }
@@ -390,7 +362,7 @@ export const AuthScreen: React.FC = () => {
         const cloudRole: 'BUYER' | 'FARMER' | 'DRIVER' =
           selectedRole === 'FARMER' ? 'FARMER' : selectedRole === 'COURIER' ? 'DRIVER' : 'BUYER';
 
-        // 1. Register user with their own email on Supabase Auth
+        // 1. Live Supabase Auth sign up
         const { profile, error } = await supabaseService.signUp(cleanEmail, password, {
           name: fullName.trim(),
           role: cloudRole,
@@ -399,9 +371,12 @@ export const AuthScreen: React.FC = () => {
 
         if (error) {
           setIsLoading(false);
-          if (error.toLowerCase().includes('already registered') || error.toLowerCase().includes('user already exists')) {
+          if (
+            error.toLowerCase().includes('already registered') ||
+            error.toLowerCase().includes('user already exists')
+          ) {
             Alert.alert(
-              'Email Already Registered',
+              'Account Exists',
               `An account with ${cleanEmail} is already registered.\n\nWould you like to switch to "Sign In" instead?`,
               [
                 { text: 'Cancel', style: 'cancel' },
@@ -414,7 +389,7 @@ export const AuthScreen: React.FC = () => {
           return;
         }
 
-        // 2. If Driver, create driver & vehicle records in Supabase
+        // 2. If Driver, register vehicle in logistics tables
         if (selectedRole === 'COURIER') {
           await logisticsService.registerDriver({
             name: fullName.trim(),
@@ -430,6 +405,7 @@ export const AuthScreen: React.FC = () => {
           });
         }
 
+        // 3. Update active user profile
         updateUserProfile({
           name: fullName.trim(),
           email: cleanEmail,
@@ -437,15 +413,16 @@ export const AuthScreen: React.FC = () => {
           role: selectedRole,
           walletBalance: profile?.walletBalance ?? (selectedRole === 'FARMER' ? 24500 : 12500),
           escrowBalance: profile?.escrowBalance ?? 0,
-          savedAddresses: profile?.savedAddresses ?? ['Central Delivery Hub #4B, Green Valley'],
-          defaultAddress: profile?.defaultAddress ?? 'Central Delivery Hub #4B, Green Valley',
+          savedAddresses: profile?.savedAddresses ?? ['Central Delivery Hub, Colombo'],
+          defaultAddress: profile?.defaultAddress ?? 'Central Delivery Hub, Colombo',
           isLoggedIn: true,
         });
         setCurrentRole(selectedRole);
 
         setIsLoading(false);
-        showToast(`Account created for ${cleanEmail}! Welcome, ${fullName.trim()}! 🚀`, 'success');
+        showToast(`Welcome to FarmBy, ${fullName.trim()}! 🚀`, 'success');
 
+        // Route to respective dashboard
         if (selectedRole === 'COURIER') {
           navigation.navigate('DriverDashboard');
         } else if (selectedRole === 'FARMER') {
@@ -454,7 +431,7 @@ export const AuthScreen: React.FC = () => {
           navigation.navigate('BuyerDashboard');
         }
       } else {
-        // Sign In Flow with user's own email & password
+        // Sign In Flow with real Supabase Auth credentials
         const { profile, error, notice } = await supabaseService.signIn(cleanEmail, password);
 
         if (error) {
@@ -462,7 +439,7 @@ export const AuthScreen: React.FC = () => {
           if (error.toLowerCase().includes('invalid login credentials')) {
             Alert.alert(
               'Sign In Failed',
-              `No account found matching ${cleanEmail} with this password.\n\nIf you don't have an account yet, switch to "Create Account" above to register with your email!`,
+              `The email or password you entered does not match our records.\n\nIf you don't have an account yet, switch to "Create Account" to get started!`,
               [
                 { text: 'Try Again', style: 'cancel' },
                 { text: 'Create Account', onPress: () => setAuthMode('signup') },
@@ -493,8 +470,8 @@ export const AuthScreen: React.FC = () => {
           role: resolvedRole,
           walletBalance: profile?.walletBalance ?? 12500,
           escrowBalance: profile?.escrowBalance ?? 0,
-          savedAddresses: profile?.savedAddresses ?? ['Central Delivery Hub #4B, Green Valley'],
-          defaultAddress: profile?.defaultAddress ?? 'Central Delivery Hub #4B, Green Valley',
+          savedAddresses: profile?.savedAddresses ?? ['Central Delivery Hub, Colombo'],
+          defaultAddress: profile?.defaultAddress ?? 'Central Delivery Hub, Colombo',
           isLoggedIn: true,
         });
         setCurrentRole(resolvedRole);
@@ -504,7 +481,7 @@ export const AuthScreen: React.FC = () => {
         }
 
         setIsLoading(false);
-        showToast(`Welcome back, ${resolvedName}! (${resolvedRole})`, 'success');
+        showToast(`Welcome back, ${resolvedName}!`, 'success');
 
         if (resolvedRole === 'COURIER') {
           navigation.navigate('DriverDashboard');
@@ -516,8 +493,26 @@ export const AuthScreen: React.FC = () => {
       }
     } catch (err: any) {
       setIsLoading(false);
-      Alert.alert('Authentication Error', err.message || 'Unable to connect to Supabase service.');
+      Alert.alert('Authentication Error', err.message || 'Unable to connect to authentication service.');
     }
+  };
+
+  const roleDetails = {
+    BUYER: {
+      title: 'Buyer',
+      subtitle: 'Order fresh harvest directly from verified growers',
+      icon: 'cart-outline' as const,
+    },
+    FARMER: {
+      title: 'Farmer',
+      subtitle: 'List crop yields & connect directly with buyers',
+      icon: 'leaf-outline' as const,
+    },
+    COURIER: {
+      title: 'Driver',
+      subtitle: 'Deliver farm shipments with intelligent route dispatch',
+      icon: 'car-outline' as const,
+    },
   };
 
   return (
@@ -528,533 +523,697 @@ export const AuthScreen: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
+        {/* Minimalist Uber Top Navigation Bar */}
+        <View style={[styles.topBar, isDark ? styles.topBarDark : styles.topBarLight]}>
+          <TouchableOpacity
+            style={[styles.iconButton, isDark ? styles.iconButtonDark : styles.iconButtonLight]}
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate('MainTabs', { tab: 'home' });
+              }
+            }}
+            activeOpacity={0.7}
+            accessibilityLabel="Go back"
+          >
+            <Ionicons name="chevron-back" size={22} color={isDark ? '#FFFFFF' : '#000000'} />
+          </TouchableOpacity>
+
+          <View style={styles.brandContainer}>
+            <Text style={[styles.brandText, isDark ? styles.textWhite : styles.textBlack]}>FarmBy</Text>
+            <View style={styles.verifiedBadge}>
+              <Ionicons name="checkmark-circle" size={13} color="#06C167" />
+              <Text style={styles.verifiedText}>Official</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.iconButton, isDark ? styles.iconButtonDark : styles.iconButtonLight]}
+            onPress={toggleThemeMode}
+            activeOpacity={0.7}
+            accessibilityLabel="Toggle dark/light mode"
+          >
+            <Ionicons
+              name={isDark ? 'sunny-outline' : 'moon-outline'}
+              size={19}
+              color={isDark ? '#FFFFFF' : '#000000'}
+            />
+          </TouchableOpacity>
+        </View>
+
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Top Brand Header */}
-          <View style={styles.header}>
-            <View style={styles.brandRow}>
-              <Logo size="md" variant="mark" themeMode={themeMode} />
-              <View style={{ marginLeft: 12 }}>
-                <Text style={[styles.brandTitle, isDark && { color: '#FFFFFF' }]}>FarmBy</Text>
-                <Text style={styles.brandSubtitle}>AGRICULTURAL MARKETPLACE & FLEET</Text>
-              </View>
-            </View>
-
-            {/* Cloud Status Indicator */}
-            <View style={[styles.cloudBadge, isDark && { backgroundColor: '#1A1A1E', borderColor: 'rgba(255,255,255,0.1)' }]}>
-              <View style={styles.pulsingGreenDot} />
-              <Text style={styles.cloudBadgeText}>Supabase Cloud Active</Text>
-            </View>
+          {/* Animated Header Section */}
+          <View style={styles.headerSection}>
+            <Text style={[styles.mainHeading, isDark ? styles.textWhite : styles.textBlack]}>
+              {authMode === 'login' ? 'Welcome back' : 'Create account'}
+            </Text>
+            <Text style={[styles.subHeading, isDark ? styles.textMutedDark : styles.textMutedLight]}>
+              {authMode === 'login'
+                ? 'Sign in with your email to access your dashboard'
+                : 'Join the decentralized agricultural network today'}
+            </Text>
           </View>
 
-          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-            {/* Role Selector Segment */}
-            <Text style={[styles.sectionLabel, isDark && { color: '#9CA3AF' }]}>SELECT YOUR ROLE</Text>
-            <View style={[styles.roleSegment, isDark && { backgroundColor: '#18181B' }]}>
-              <TouchableOpacity
-                style={[styles.roleTab, selectedRole === 'BUYER' && styles.roleTabActive]}
-                onPress={() => setSelectedRole('BUYER')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="cart"
-                  size={16}
-                  color={selectedRole === 'BUYER' ? '#FFFFFF' : isDark ? '#9CA3AF' : '#64748B'}
-                />
-                <Text style={[styles.roleTabText, selectedRole === 'BUYER' && styles.roleTabTextActive]}>
-                  Buyer
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.roleTab, selectedRole === 'FARMER' && styles.roleTabActive]}
-                onPress={() => setSelectedRole('FARMER')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="leaf"
-                  size={16}
-                  color={selectedRole === 'FARMER' ? '#FFFFFF' : isDark ? '#9CA3AF' : '#64748B'}
-                />
-                <Text style={[styles.roleTabText, selectedRole === 'FARMER' && styles.roleTabTextActive]}>
-                  Farmer
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.roleTab, selectedRole === 'COURIER' && styles.roleTabActive]}
-                onPress={() => setSelectedRole('COURIER')}
-                activeOpacity={0.8}
-              >
-                <Ionicons
-                  name="car"
-                  size={16}
-                  color={selectedRole === 'COURIER' ? '#FFFFFF' : isDark ? '#9CA3AF' : '#64748B'}
-                />
-                <Text style={[styles.roleTabText, selectedRole === 'COURIER' && styles.roleTabTextActive]}>
-                  Driver
-                </Text>
-              </TouchableOpacity>
+          {/* Uber-Style Animated Role Selector */}
+          <View style={styles.sectionWrap}>
+            <Text style={[styles.microLabel, isDark ? styles.microLabelDark : styles.microLabelLight]}>
+              ACCOUNT ROLE
+            </Text>
+            <View style={[styles.roleSegmentContainer, isDark ? styles.segmentDark : styles.segmentLight]}>
+              {(['BUYER', 'FARMER', 'COURIER'] as const).map(role => {
+                const isActive = selectedRole === role;
+                const info = roleDetails[role];
+                return (
+                  <TouchableOpacity
+                    key={role}
+                    style={[
+                      styles.roleSegmentButton,
+                      isActive && (isDark ? styles.roleSegmentActiveDark : styles.roleSegmentActiveLight),
+                    ]}
+                    onPress={() => setSelectedRole(role)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={info.icon}
+                      size={17}
+                      color={
+                        isActive
+                          ? isDark
+                            ? '#000000'
+                            : '#FFFFFF'
+                          : isDark
+                          ? '#A1A1AA'
+                          : '#71717A'
+                      }
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={[
+                        styles.roleSegmentText,
+                        isActive
+                          ? isDark
+                            ? styles.roleSegmentTextActiveDark
+                            : styles.roleSegmentTextActiveLight
+                          : isDark
+                          ? styles.textMutedDark
+                          : styles.textMutedLight,
+                      ]}
+                    >
+                      {info.title}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+            <Text style={[styles.roleHint, isDark ? styles.roleHintDark : styles.roleHintLight]}>
+              {roleDetails[selectedRole].subtitle}
+            </Text>
+          </View>
 
-            {/* Mode Toggle (Sign In / Register) */}
-            <View style={styles.modeToggleRow}>
-              <TouchableOpacity
-                style={[styles.modeBtn, authMode === 'login' && styles.modeBtnActive]}
-                onPress={() => setAuthMode('login')}
-              >
-                <Text style={[styles.modeBtnText, authMode === 'login' && styles.modeBtnTextActive]}>
-                  Sign In
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modeBtn, authMode === 'signup' && styles.modeBtnActive]}
-                onPress={() => setAuthMode('signup')}
-              >
-                <Text style={[styles.modeBtnText, authMode === 'signup' && styles.modeBtnTextActive]}>
-                  Create Account
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Google Sign In Direct Option */}
+          {/* Animated Mode Switcher (Sign In vs Create Account) */}
+          <View style={[styles.modeTabsRow, isDark ? styles.modeTabsDark : styles.modeTabsLight]}>
             <TouchableOpacity
-              style={[styles.googleContinueBtn, isDark ? styles.googleBtnDark : styles.googleBtnLight]}
-              onPress={handleContinueWithGoogle}
+              style={[
+                styles.modeTab,
+                authMode === 'login' && (isDark ? styles.modeTabActiveDark : styles.modeTabActiveLight),
+              ]}
+              onPress={() => setAuthMode('login')}
               activeOpacity={0.85}
             >
-              <View style={styles.googleIconBadge}>
-                <Ionicons name="logo-google" size={18} color="#EA4335" />
-              </View>
-              <Text style={[styles.googleContinueText, isDark && { color: '#FFFFFF' }]}>
-                Continue with Google
+              <Text
+                style={[
+                  styles.modeTabText,
+                  authMode === 'login'
+                    ? isDark
+                      ? styles.textWhite
+                      : styles.textBlack
+                    : isDark
+                    ? styles.textMutedDark
+                    : styles.textMutedLight,
+                ]}
+              >
+                Sign In
               </Text>
             </TouchableOpacity>
 
-            {/* Divider */}
-            <View style={styles.orDividerRow}>
-              <View style={[styles.orDividerLine, isDark && styles.orLineDark]} />
-              <Text style={[styles.orDividerText, isDark && { color: '#71717A' }]}>
-                OR WITH EMAIL
+            <TouchableOpacity
+              style={[
+                styles.modeTab,
+                authMode === 'signup' && (isDark ? styles.modeTabActiveDark : styles.modeTabActiveLight),
+              ]}
+              onPress={() => setAuthMode('signup')}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.modeTabText,
+                  authMode === 'signup'
+                    ? isDark
+                      ? styles.textWhite
+                      : styles.textBlack
+                    : isDark
+                    ? styles.textMutedDark
+                    : styles.textMutedLight,
+                ]}
+              >
+                Create Account
               </Text>
-              <View style={[styles.orDividerLine, isDark && styles.orLineDark]} />
-            </View>
+            </TouchableOpacity>
+          </View>
 
-            {/* Primary Form Inputs Container */}
-            <View style={[styles.card, isDark && styles.cardDark]}>
-              <View style={styles.formHeaderRow}>
-                <Ionicons
-                  name={authMode === 'login' ? 'log-in-outline' : 'person-add-outline'}
-                  size={20}
-                  color="#06C167"
-                />
-                <View style={{ marginLeft: 8, flex: 1 }}>
-                  <Text style={[styles.formHeaderTitle, isDark && { color: '#FFFFFF' }]}>
-                    {authMode === 'login' ? 'Sign In with Your Email' : 'Create Your Account'}
-                  </Text>
-                  <Text style={styles.formHeaderSub}>
-                    {authMode === 'login'
-                      ? 'Use your personal email and password to access your account'
-                      : `Enter your details to register as a ${selectedRole === 'COURIER' ? 'Driver' : selectedRole === 'FARMER' ? 'Farmer' : 'Buyer'}`}
-                  </Text>
+          {/* Official Google OAuth Single Sign-On Button */}
+          <TouchableOpacity
+            style={[styles.googleButton, isDark ? styles.googleButtonDark : styles.googleButtonLight]}
+            onPress={handleContinueWithGoogle}
+            disabled={isGoogleLoading}
+            activeOpacity={0.85}
+          >
+            {isGoogleLoading ? (
+              <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : '#000000'} />
+            ) : (
+              <>
+                <View style={styles.googleIconWrap}>
+                  <Ionicons name="logo-google" size={19} color="#EA4335" />
                 </View>
-              </View>
+                <Text style={[styles.googleButtonText, isDark ? styles.textWhite : styles.textBlack]}>
+                  Continue with Google
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
 
-              {/* Full Name for Sign Up */}
-              {authMode === 'signup' && (
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, isDark && { color: '#E4E4E7' }]}>Full Name</Text>
-                  <View style={[styles.inputWrapper, isDark && styles.inputWrapperDark]}>
-                    <Ionicons name="person-outline" size={18} color="#9CA3AF" />
-                    <TextInput
-                      style={[styles.input, isDark && { color: '#FFFFFF' }]}
-                      placeholder="e.g. John Doe"
-                      placeholderTextColor="#71717A"
-                      value={fullName}
-                      onChangeText={setFullName}
-                      autoCapitalize="words"
-                    />
-                  </View>
-                </View>
-              )}
+          {/* Divider */}
+          <View style={styles.dividerWrap}>
+            <View style={[styles.dividerLine, isDark ? styles.dividerLineDark : styles.dividerLineLight]} />
+            <Text style={[styles.dividerText, isDark ? styles.dividerTextDark : styles.dividerTextLight]}>
+              OR CONTINUE WITH EMAIL
+            </Text>
+            <View style={[styles.dividerLine, isDark ? styles.dividerLineDark : styles.dividerLineLight]} />
+          </View>
 
-              {/* Email Address */}
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, isDark && { color: '#E4E4E7' }]}>Your Email Address</Text>
-                <View style={[styles.inputWrapper, isDark && styles.inputWrapperDark]}>
-                  <Ionicons name="mail-outline" size={18} color="#9CA3AF" />
+          {/* Animated Form Fields */}
+          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+            {/* Full Name (Sign Up only) */}
+            {authMode === 'signup' && (
+              <View style={styles.inputBlock}>
+                <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
+                  Full Name
+                </Text>
+                <View
+                  style={[
+                    styles.inputField,
+                    isDark ? styles.inputFieldDark : styles.inputFieldLight,
+                    focusedField === 'fullName' && styles.inputFocused,
+                  ]}
+                >
+                  <Ionicons
+                    name="person-outline"
+                    size={19}
+                    color={focusedField === 'fullName' ? '#06C167' : isDark ? '#71717A' : '#9CA3AF'}
+                  />
                   <TextInput
-                    style={[styles.input, isDark && { color: '#FFFFFF' }]}
-                    placeholder="your.email@gmail.com"
-                    placeholderTextColor="#71717A"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
+                    style={[styles.textInput, isDark ? styles.textWhite : styles.textBlack]}
+                    placeholder="e.g. John Doe"
+                    placeholderTextColor={isDark ? '#71717A' : '#9CA3AF'}
+                    value={fullName}
+                    onChangeText={setFullName}
+                    onFocus={() => setFocusedField('fullName')}
+                    onBlur={() => setFocusedField(null)}
+                    autoCapitalize="words"
+                    autoCorrect={false}
                   />
                 </View>
-                <Text style={styles.inputHelperText}>
-                  Enter any personal or work email address.
-                </Text>
               </View>
+            )}
 
-              {/* Phone Number for Sign Up */}
-              {authMode === 'signup' && (
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, isDark && { color: '#E4E4E7' }]}>Phone Number</Text>
-                  <View style={[styles.inputWrapper, isDark && styles.inputWrapperDark]}>
-                    <Ionicons name="call-outline" size={18} color="#9CA3AF" />
+            {/* Email Address */}
+            <View style={styles.inputBlock}>
+              <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
+                Email Address
+              </Text>
+              <View
+                style={[
+                  styles.inputField,
+                  isDark ? styles.inputFieldDark : styles.inputFieldLight,
+                  focusedField === 'email' && styles.inputFocused,
+                ]}
+              >
+                <Ionicons
+                  name="mail-outline"
+                  size={19}
+                  color={focusedField === 'email' ? '#06C167' : isDark ? '#71717A' : '#9CA3AF'}
+                />
+                <TextInput
+                  style={[styles.textInput, isDark ? styles.textWhite : styles.textBlack]}
+                  placeholder="name@example.com"
+                  placeholderTextColor={isDark ? '#71717A' : '#9CA3AF'}
+                  value={email}
+                  onChangeText={setEmail}
+                  onFocus={() => setFocusedField('email')}
+                  onBlur={() => setFocusedField(null)}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+
+            {/* Phone Number (Sign Up only) */}
+            {authMode === 'signup' && (
+              <View style={styles.inputBlock}>
+                <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
+                  Phone Number
+                </Text>
+                <View
+                  style={[
+                    styles.inputField,
+                    isDark ? styles.inputFieldDark : styles.inputFieldLight,
+                    focusedField === 'phone' && styles.inputFocused,
+                  ]}
+                >
+                  <Ionicons
+                    name="call-outline"
+                    size={19}
+                    color={focusedField === 'phone' ? '#06C167' : isDark ? '#71717A' : '#9CA3AF'}
+                  />
+                  <TextInput
+                    style={[styles.textInput, isDark ? styles.textWhite : styles.textBlack]}
+                    placeholder="+94 77 123 4567"
+                    placeholderTextColor={isDark ? '#71717A' : '#9CA3AF'}
+                    value={phone}
+                    onChangeText={setPhone}
+                    onFocus={() => setFocusedField('phone')}
+                    onBlur={() => setFocusedField(null)}
+                    keyboardType="phone-pad"
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* Farmer Specific Fields (Sign Up only) */}
+            {authMode === 'signup' && selectedRole === 'FARMER' && (
+              <>
+                <View style={styles.inputBlock}>
+                  <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
+                    Farm or Orchard Name
+                  </Text>
+                  <View
+                    style={[
+                      styles.inputField,
+                      isDark ? styles.inputFieldDark : styles.inputFieldLight,
+                      focusedField === 'farmName' && styles.inputFocused,
+                    ]}
+                  >
+                    <Ionicons
+                      name="business-outline"
+                      size={19}
+                      color={focusedField === 'farmName' ? '#06C167' : isDark ? '#71717A' : '#9CA3AF'}
+                    />
                     <TextInput
-                      style={[styles.input, isDark && { color: '#FFFFFF' }]}
-                      placeholder="+94 77 123 4567"
-                      placeholderTextColor="#71717A"
-                      value={phone}
-                      onChangeText={setPhone}
-                      keyboardType="phone-pad"
+                      style={[styles.textInput, isDark ? styles.textWhite : styles.textBlack]}
+                      placeholder="e.g. Highland Valley Orchards"
+                      placeholderTextColor={isDark ? '#71717A' : '#9CA3AF'}
+                      value={farmName}
+                      onChangeText={setFarmName}
+                      onFocus={() => setFocusedField('farmName')}
+                      onBlur={() => setFocusedField(null)}
                     />
                   </View>
                 </View>
-              )}
 
-              {/* Farmer Specific Fields */}
-              {authMode === 'signup' && selectedRole === 'FARMER' && (
-                <>
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.inputLabel, isDark && { color: '#E4E4E7' }]}>Farm / Orchard Name</Text>
-                    <View style={[styles.inputWrapper, isDark && styles.inputWrapperDark]}>
-                      <Ionicons name="business-outline" size={18} color="#9CA3AF" />
-                      <TextInput
-                        style={[styles.input, isDark && { color: '#FFFFFF' }]}
-                        placeholder="e.g. Highland Valley Orchards"
-                        placeholderTextColor="#71717A"
-                        value={farmName}
-                        onChangeText={setFarmName}
-                      />
-                    </View>
+                <View style={styles.inputBlock}>
+                  <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
+                    Farm Region / Location
+                  </Text>
+                  <View
+                    style={[
+                      styles.inputField,
+                      isDark ? styles.inputFieldDark : styles.inputFieldLight,
+                      focusedField === 'farmLocation' && styles.inputFocused,
+                    ]}
+                  >
+                    <Ionicons
+                      name="location-outline"
+                      size={19}
+                      color={focusedField === 'farmLocation' ? '#06C167' : isDark ? '#71717A' : '#9CA3AF'}
+                    />
+                    <TextInput
+                      style={[styles.textInput, isDark ? styles.textWhite : styles.textBlack]}
+                      placeholder="e.g. Kandy, Central Province"
+                      placeholderTextColor={isDark ? '#71717A' : '#9CA3AF'}
+                      value={farmLocation}
+                      onChangeText={setFarmLocation}
+                      onFocus={() => setFocusedField('farmLocation')}
+                      onBlur={() => setFocusedField(null)}
+                    />
                   </View>
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.inputLabel, isDark && { color: '#E4E4E7' }]}>Farm Region / Location</Text>
-                    <View style={[styles.inputWrapper, isDark && styles.inputWrapperDark]}>
-                      <Ionicons name="location-outline" size={18} color="#9CA3AF" />
-                      <TextInput
-                        style={[styles.input, isDark && { color: '#FFFFFF' }]}
-                        placeholder="e.g. Kandy, Central Province"
-                        placeholderTextColor="#71717A"
-                        value={farmLocation}
-                        onChangeText={setFarmLocation}
-                      />
-                    </View>
-                  </View>
-                </>
-              )}
+                </View>
+              </>
+            )}
 
-              {/* Driver Specific Fields */}
-              {authMode === 'signup' && selectedRole === 'COURIER' && (
-                <>
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.inputLabel, isDark && { color: '#E4E4E7' }]}>Vehicle Category</Text>
-                    <View style={styles.vehiclePillRow}>
-                      {(['Small truck', 'Van', 'Three-wheeler', 'Motorbike', 'Lorry'] as VehicleType[]).map(v => (
+            {/* Driver Specific Fields (Sign Up only) */}
+            {authMode === 'signup' && selectedRole === 'COURIER' && (
+              <>
+                <View style={styles.inputBlock}>
+                  <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
+                    Vehicle Category
+                  </Text>
+                  <View style={styles.vehicleCategoryRow}>
+                    {(['Small truck', 'Van', 'Three-wheeler', 'Motorbike', 'Lorry'] as VehicleType[]).map(v => {
+                      const isVSelected = vehicleType === v;
+                      return (
                         <TouchableOpacity
                           key={v}
-                          style={[styles.vehiclePill, vehicleType === v && styles.vehiclePillActive]}
+                          style={[
+                            styles.vehiclePill,
+                            isDark ? styles.vehiclePillDark : styles.vehiclePillLight,
+                            isVSelected && styles.vehiclePillActive,
+                          ]}
                           onPress={() => setVehicleType(v)}
+                          activeOpacity={0.8}
                         >
-                          <Text style={[styles.vehiclePillText, vehicleType === v && styles.vehiclePillTextActive]}>
+                          <Text
+                            style={[
+                              styles.vehiclePillText,
+                              isVSelected
+                                ? styles.vehiclePillTextActive
+                                : isDark
+                                ? styles.textMutedDark
+                                : styles.textMutedLight,
+                            ]}
+                          >
                             {v}
                           </Text>
                         </TouchableOpacity>
-                      ))}
-                    </View>
+                      );
+                    })}
                   </View>
-
-                  <View style={styles.inputGroup}>
-                    <Text style={[styles.inputLabel, isDark && { color: '#E4E4E7' }]}>Vehicle Model & Registration Plate</Text>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <View style={[styles.inputWrapper, { flex: 1 }, isDark && styles.inputWrapperDark]}>
-                        <TextInput
-                          style={[styles.input, isDark && { color: '#FFFFFF' }]}
-                          placeholder="e.g. Isuzu Elf"
-                          placeholderTextColor="#71717A"
-                          value={vehicleModel}
-                          onChangeText={setVehicleModel}
-                        />
-                      </View>
-                      <View style={[styles.inputWrapper, { flex: 1 }, isDark && styles.inputWrapperDark]}>
-                        <TextInput
-                          style={[styles.input, isDark && { color: '#FFFFFF' }]}
-                          placeholder="WP CAB-1234"
-                          placeholderTextColor="#71717A"
-                          value={regPlate}
-                          onChangeText={setRegPlate}
-                          autoCapitalize="characters"
-                        />
-                      </View>
-                    </View>
-                  </View>
-                </>
-              )}
-
-              {/* Password */}
-              <View style={styles.inputGroup}>
-                <View style={styles.passwordLabelRow}>
-                  <Text style={[styles.inputLabel, isDark && { color: '#E4E4E7' }]}>Password</Text>
-                  {authMode === 'login' && (
-                    <TouchableOpacity onPress={handleSendPasswordReset} activeOpacity={0.7}>
-                      <Text style={styles.forgotPasswordText}>Forgot password?</Text>
-                    </TouchableOpacity>
-                  )}
                 </View>
-                <View style={[styles.inputWrapper, isDark && styles.inputWrapperDark]}>
-                  <Ionicons name="lock-closed-outline" size={18} color="#9CA3AF" />
-                  <TextInput
-                    style={[styles.input, isDark && { color: '#FFFFFF' }]}
-                    placeholder="Enter password (min 6 chars)"
-                    placeholderTextColor="#71717A"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                  />
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                    <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#9CA3AF" />
+
+                <View style={styles.inputBlock}>
+                  <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
+                    Vehicle Model & License Plate
+                  </Text>
+                  <View style={styles.dualInputRow}>
+                    <View
+                      style={[
+                        styles.inputField,
+                        { flex: 1.2 },
+                        isDark ? styles.inputFieldDark : styles.inputFieldLight,
+                        focusedField === 'vehicleModel' && styles.inputFocused,
+                      ]}
+                    >
+                      <TextInput
+                        style={[styles.textInput, isDark ? styles.textWhite : styles.textBlack]}
+                        placeholder="e.g. Isuzu Elf"
+                        placeholderTextColor={isDark ? '#71717A' : '#9CA3AF'}
+                        value={vehicleModel}
+                        onChangeText={setVehicleModel}
+                        onFocus={() => setFocusedField('vehicleModel')}
+                        onBlur={() => setFocusedField(null)}
+                      />
+                    </View>
+                    <View
+                      style={[
+                        styles.inputField,
+                        { flex: 1 },
+                        isDark ? styles.inputFieldDark : styles.inputFieldLight,
+                        focusedField === 'regPlate' && styles.inputFocused,
+                      ]}
+                    >
+                      <TextInput
+                        style={[styles.textInput, isDark ? styles.textWhite : styles.textBlack]}
+                        placeholder="WP CAB-1234"
+                        placeholderTextColor={isDark ? '#71717A' : '#9CA3AF'}
+                        value={regPlate}
+                        onChangeText={setRegPlate}
+                        onFocus={() => setFocusedField('regPlate')}
+                        onBlur={() => setFocusedField(null)}
+                        autoCapitalize="characters"
+                      />
+                    </View>
+                  </View>
+                </View>
+              </>
+            )}
+
+            {/* Password */}
+            <View style={styles.inputBlock}>
+              <View style={styles.labelWithActionRow}>
+                <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
+                  Password
+                </Text>
+                {authMode === 'login' && (
+                  <TouchableOpacity onPress={handleSendPasswordReset} activeOpacity={0.7}>
+                    <Text style={styles.forgotPasswordText}>Forgot password?</Text>
                   </TouchableOpacity>
+                )}
+              </View>
+              <View
+                style={[
+                  styles.inputField,
+                  isDark ? styles.inputFieldDark : styles.inputFieldLight,
+                  focusedField === 'password' && styles.inputFocused,
+                ]}
+              >
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={19}
+                  color={focusedField === 'password' ? '#06C167' : isDark ? '#71717A' : '#9CA3AF'}
+                />
+                <TextInput
+                  style={[styles.textInput, isDark ? styles.textWhite : styles.textBlack]}
+                  placeholder={authMode === 'signup' ? 'Min 6 characters' : 'Enter your password'}
+                  placeholderTextColor={isDark ? '#71717A' : '#9CA3AF'}
+                  value={password}
+                  onChangeText={setPassword}
+                  onFocus={() => setFocusedField('password')}
+                  onBlur={() => setFocusedField(null)}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={styles.eyeButton}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color={isDark ? '#71717A' : '#9CA3AF'}
+                  />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Confirm Password (Sign Up only) */}
+            {authMode === 'signup' && (
+              <View style={styles.inputBlock}>
+                <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
+                  Confirm Password
+                </Text>
+                <View
+                  style={[
+                    styles.inputField,
+                    isDark ? styles.inputFieldDark : styles.inputFieldLight,
+                    focusedField === 'confirmPassword' && styles.inputFocused,
+                  ]}
+                >
+                  <Ionicons
+                    name="shield-checkmark-outline"
+                    size={19}
+                    color={focusedField === 'confirmPassword' ? '#06C167' : isDark ? '#71717A' : '#9CA3AF'}
+                  />
+                  <TextInput
+                    style={[styles.textInput, isDark ? styles.textWhite : styles.textBlack]}
+                    placeholder="Re-enter password"
+                    placeholderTextColor={isDark ? '#71717A' : '#9CA3AF'}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    onFocus={() => setFocusedField('confirmPassword')}
+                    onBlur={() => setFocusedField(null)}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                  />
                 </View>
               </View>
+            )}
 
-              {/* Confirm Password for Sign Up */}
-              {authMode === 'signup' && (
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, isDark && { color: '#E4E4E7' }]}>Confirm Password</Text>
-                  <View style={[styles.inputWrapper, isDark && styles.inputWrapperDark]}>
-                    <Ionicons name="shield-checkmark-outline" size={18} color="#9CA3AF" />
-                    <TextInput
-                      style={[styles.input, isDark && { color: '#FFFFFF' }]}
-                      placeholder="Re-enter your password"
-                      placeholderTextColor="#71717A"
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      secureTextEntry={!showPassword}
-                    />
-                  </View>
-                </View>
-              )}
-
-              {/* Primary Action Button */}
+            {/* Primary Action Button with Micro-Animation */}
+            <Animated.View style={{ transform: [{ scale: buttonScale }], marginTop: 12 }}>
               <TouchableOpacity
-                style={[styles.primaryBtn, isLoading && { opacity: 0.8 }]}
+                style={[styles.primaryButton, isLoading && { opacity: 0.8 }]}
                 onPress={handleSubmit}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
                 disabled={isLoading}
-                activeOpacity={0.88}
+                activeOpacity={0.92}
               >
                 {isLoading ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <>
-                    <Text style={styles.primaryBtnText}>
+                  <View style={styles.primaryButtonContent}>
+                    <Text style={styles.primaryButtonText}>
                       {authMode === 'login'
-                        ? `Sign In with Email`
-                        : `Create ${selectedRole === 'COURIER' ? 'Driver' : selectedRole === 'FARMER' ? 'Farmer' : 'Buyer'} Account`}
+                        ? 'Sign In'
+                        : `Create ${roleDetails[selectedRole].title} Account`}
                     </Text>
                     <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={{ marginLeft: 6 }} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+
+            {/* Magic Link (Passwordless Option in Login Mode) */}
+            {authMode === 'login' && (
+              <TouchableOpacity
+                style={[styles.magicLinkButton, isDark ? styles.magicLinkDark : styles.magicLinkLight]}
+                onPress={handleSendMagicLink}
+                disabled={isSendingMagicLink}
+                activeOpacity={0.8}
+              >
+                {isSendingMagicLink ? (
+                  <ActivityIndicator size="small" color="#06C167" />
+                ) : (
+                  <>
+                    <Ionicons name="mail-unread-outline" size={17} color="#06C167" style={{ marginRight: 8 }} />
+                    <Text style={[styles.magicLinkText, isDark ? styles.textWhite : styles.textBlack]}>
+                      Email me a Magic Sign-In Link
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
+            )}
 
-              {/* Email Service: Magic Link (Passwordless) Option */}
-              {authMode === 'login' && (
-                <TouchableOpacity
-                  style={[styles.magicLinkBtn, isDark && styles.magicLinkBtnDark]}
-                  onPress={handleSendMagicLink}
-                  disabled={isSendingMagicLink}
-                  activeOpacity={0.8}
-                >
-                  {isSendingMagicLink ? (
-                    <ActivityIndicator size="small" color="#06C167" />
-                  ) : (
-                    <>
-                      <Ionicons name="mail-unread-outline" size={16} color="#06C167" />
-                      <Text style={styles.magicLinkText}>Email me a Magic Sign-In Link</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Switch Auth Mode Prompt */}
-            <View style={styles.switchModeContainer}>
-              <Text style={[styles.switchModeText, isDark && { color: '#94A3B8' }]}>
+            {/* Mode Switch Prompt */}
+            <View style={styles.switchRow}>
+              <Text style={[styles.switchPromptText, isDark ? styles.textMutedDark : styles.textMutedLight]}>
                 {authMode === 'login' ? "Don't have an account?" : 'Already have an account?'}
               </Text>
               <TouchableOpacity
                 onPress={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
                 style={{ marginLeft: 6 }}
+                activeOpacity={0.7}
               >
-                <Text style={styles.switchModeLink}>
+                <Text style={styles.switchActionLink}>
                   {authMode === 'login' ? 'Create Account' : 'Sign In'}
                 </Text>
               </TouchableOpacity>
             </View>
 
-            {/* Quick 1-Tap Demo Logins Strip */}
-            <View style={styles.demoSection}>
-              <View style={styles.dividerRow}>
-                <View style={[styles.dividerLine, isDark && { backgroundColor: '#27272A' }]} />
-                <Text style={[styles.dividerText, isDark && { color: '#71717A' }]}>QUICK DEMO ACCESS</Text>
-                <View style={[styles.dividerLine, isDark && { backgroundColor: '#27272A' }]} />
+            {/* Security and Terms Footer */}
+            <View style={styles.footerBlock}>
+              <View style={styles.securityRow}>
+                <Ionicons name="lock-closed" size={12} color="#06C167" style={{ marginRight: 5 }} />
+                <Text style={[styles.securityText, isDark ? styles.textMutedDark : styles.textMutedLight]}>
+                  Protected by Supabase Cloud Authentication • 256-Bit SSL
+                </Text>
               </View>
-
-              <View style={styles.demoButtonsGrid}>
-                <TouchableOpacity
-                  style={[styles.demoCard, isDark && styles.demoCardDark]}
-                  onPress={() => handleQuickDemo('BUYER')}
-                >
-                  <Text style={styles.demoEmoji}>🛒</Text>
-                  <Text style={[styles.demoTitle, isDark && { color: '#FFFFFF' }]}>Buyer</Text>
-                  <Text style={styles.demoSub}>Sonal Perera</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.demoCard, isDark && styles.demoCardDark]}
-                  onPress={() => handleQuickDemo('FARMER')}
-                >
-                  <Text style={styles.demoEmoji}>🌾</Text>
-                  <Text style={[styles.demoTitle, isDark && { color: '#FFFFFF' }]}>Farmer</Text>
-                  <Text style={styles.demoSub}>Mateo Gutierrez</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.demoCard, isDark && styles.demoCardDark]}
-                  onPress={() => handleQuickDemo('COURIER')}
-                >
-                  <Text style={styles.demoEmoji}>🚚</Text>
-                  <Text style={[styles.demoTitle, isDark && { color: '#FFFFFF' }]}>Driver</Text>
-                  <Text style={styles.demoSub}>Kasun Perera</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.demoCard, isDark && styles.demoCardDark]}
-                  onPress={() => handleQuickDemo('ADMIN')}
-                >
-                  <Text style={styles.demoEmoji}>🛡️</Text>
-                  <Text style={[styles.demoTitle, isDark && { color: '#FFFFFF' }]}>Admin</Text>
-                  <Text style={styles.demoSub}>Platform Hub</Text>
-                </TouchableOpacity>
-              </View>
+              <Text style={[styles.termsText, isDark ? styles.textMutedDark : styles.textMutedLight]}>
+                By continuing, you agree to FarmBy's Terms of Service and Privacy Policy.
+              </Text>
             </View>
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Google Account Picker Modal */}
+      {/* Seamless Minimalist Google Sign-In Modal */}
       <Modal
         visible={showGoogleModal}
         transparent={true}
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowGoogleModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.googleModalContent, isDark && styles.googleModalContentDark]}>
-            <View style={styles.googleModalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Ionicons name="logo-google" size={24} color="#EA4335" />
-                <View>
-                  <Text style={[styles.googleModalTitle, isDark && { color: '#FFFFFF' }]}>
-                    Sign in with Google
-                  </Text>
-                  <Text style={styles.googleModalSub}>Use your own Google email or choose an account</Text>
-                </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalBackdrop}
+        >
+          <View style={[styles.modalCard, isDark ? styles.modalCardDark : styles.modalCardLight]}>
+            {/* Header */}
+            <View style={styles.modalHeaderRow}>
+              <View style={styles.googleIconBadgeLarge}>
+                <Ionicons name="logo-google" size={22} color="#EA4335" />
               </View>
-              <TouchableOpacity onPress={() => setShowGoogleModal(false)} style={styles.closeBtn}>
-                <Ionicons name="close" size={22} color={isDark ? '#FFFFFF' : '#0F172A'} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[styles.modalTitle, isDark ? styles.textWhite : styles.textBlack]}>
+                  Continue with Google
+                </Text>
+                <Text style={[styles.modalSubtitle, isDark ? styles.textMutedDark : styles.textMutedLight]}>
+                  Sign in with your Google account
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowGoogleModal(false)}
+                style={[styles.closeIconBtn, isDark ? styles.iconButtonDark : styles.iconButtonLight]}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={20} color={isDark ? '#FFFFFF' : '#000000'} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-              {/* Primary: Live Official Google OAuth Button */}
-              <TouchableOpacity
-                style={[styles.primaryOAuthBtn, isDark && styles.primaryOAuthBtnDark]}
-                onPress={handleBrowserGoogleOAuth}
-                activeOpacity={0.88}
+            {/* Google Email Input */}
+            <View style={{ marginTop: 20, marginBottom: 16 }}>
+              <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
+                Your Google Email Address
+              </Text>
+              <View
+                style={[
+                  styles.inputField,
+                  isDark ? styles.inputFieldDark : styles.inputFieldLight,
+                  styles.inputFocused,
+                ]}
               >
-                <View style={styles.googleIconBadge}>
-                  <Ionicons name="logo-google" size={20} color="#EA4335" />
-                </View>
-                <Text style={[styles.primaryOAuthBtnText, isDark && { color: '#FFFFFF' }]}>
-                  Launch Official Google Sign-In
-                </Text>
-                <Ionicons name="open-outline" size={16} color="#06C167" />
-              </TouchableOpacity>
-
-              {/* Divider */}
-              <View style={{ marginVertical: 14 }}>
-                <View style={styles.dividerRow}>
-                  <View style={[styles.dividerLine, isDark && { backgroundColor: '#27272A' }]} />
-                  <Text style={[styles.dividerText, isDark && { color: '#71717A' }]}>
-                    OR SIGN IN WITH ANY GMAIL
-                  </Text>
-                  <View style={[styles.dividerLine, isDark && { backgroundColor: '#27272A' }]} />
-                </View>
-              </View>
-
-              {/* Custom Google Account Box */}
-              <View style={[styles.customGoogleBox, isDark && styles.customGoogleBoxDark]}>
+                <Ionicons name="mail-outline" size={19} color="#06C167" />
                 <TextInput
-                  style={[styles.customInput, isDark && styles.customInputDark]}
-                  placeholder="Your Full Name (optional)"
-                  placeholderTextColor="#71717A"
-                  value={customGoogleName}
-                  onChangeText={setCustomGoogleName}
-                />
-                <TextInput
-                  style={[styles.customInput, isDark && styles.customInputDark]}
-                  placeholder={email || "your.email@gmail.com"}
-                  placeholderTextColor="#71717A"
-                  value={customGoogleEmail}
-                  onChangeText={setCustomGoogleEmail}
+                  style={[styles.textInput, isDark ? styles.textWhite : styles.textBlack]}
+                  placeholder="your.name@gmail.com"
+                  placeholderTextColor={isDark ? '#71717A' : '#9CA3AF'}
+                  value={googleEmailInput}
+                  onChangeText={setGoogleEmailInput}
                   keyboardType="email-address"
                   autoCapitalize="none"
+                  autoCorrect={false}
+                  autoFocus={true}
                 />
-                <TouchableOpacity
-                  style={styles.customSubmitBtn}
-                  onPress={handleCustomGoogleSubmit}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.customSubmitText}>Sync & Sign In with This Email</Text>
-                </TouchableOpacity>
               </View>
+            </View>
 
-              {/* Demo Profiles Subtitle */}
-              <View style={{ marginVertical: 14, paddingHorizontal: 4 }}>
-                <Text style={[styles.sectionLabel, { fontSize: 11, marginBottom: 8 }, isDark && { color: '#9CA3AF' }]}>
-                  OR SELECT A VERIFIED TEST PROFILE
-                </Text>
-              </View>
+            {/* Action Button */}
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => executeGoogleLogin(googleEmailInput)}
+              disabled={isGoogleLoading}
+              activeOpacity={0.88}
+            >
+              {isGoogleLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <View style={styles.primaryButtonContent}>
+                  <Ionicons name="logo-google" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+                  <Text style={styles.primaryButtonText}>
+                    Sign In with This Google Account
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
 
-              {/* Account list */}
-              {GOOGLE_ACCOUNTS.map((acc, idx) => (
-                <TouchableOpacity
-                  key={idx}
-                  style={[styles.googleAccountCard, isDark && styles.googleAccountCardDark]}
-                  onPress={() => handleSelectGoogleAccount(acc)}
-                  activeOpacity={0.75}
-                >
-                  <Image source={{ uri: acc.avatarUrl }} style={styles.googleAccountAvatar} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.googleAccountName, isDark && { color: '#FFFFFF' }]}>
-                      {acc.name}
-                    </Text>
-                    <Text style={styles.googleAccountEmail}>{acc.email}</Text>
-                    <Text style={styles.googleAccountSub}>{acc.subtitle}</Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            {/* Optional Browser OAuth link */}
+            <TouchableOpacity
+              style={{ marginTop: 14, alignItems: 'center' }}
+              onPress={handleBrowserOAuthFromModal}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.modalSecondaryLink, isDark ? styles.textMutedDark : styles.textMutedLight]}>
+                Or launch browser authorization →
+              </Text>
+            </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -1064,575 +1223,500 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
+  bgLight: {
+    backgroundColor: '#FFFFFF',
+  },
   bgDark: {
     backgroundColor: '#000000',
   },
-  bgLight: {
-    backgroundColor: '#F8FAFC',
+  textWhite: {
+    color: '#FFFFFF',
   },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 40,
+  textBlack: {
+    color: '#000000',
   },
-  header: {
+  textMutedLight: {
+    color: '#6B7280',
+  },
+  textMutedDark: {
+    color: '#9CA3AF',
+  },
+
+  // Top Minimalist Bar
+  topBar: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingTop: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  brandRow: {
+  topBarLight: {
+    borderBottomColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  topBarDark: {
+    borderBottomColor: 'rgba(255, 255, 255, 0.10)',
+  },
+  iconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconButtonLight: {
+    backgroundColor: '#F3F4F6',
+  },
+  iconButtonDark: {
+    backgroundColor: '#1C1C1E',
+  },
+  brandContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
-  brandTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#0F172A',
-    letterSpacing: -0.5,
-  },
-  brandSubtitle: {
-    fontSize: 9.5,
+  brandText: {
+    fontSize: 18,
     fontWeight: '800',
-    color: '#06C167',
-    letterSpacing: 0.8,
+    letterSpacing: -0.3,
   },
-  cloudBadge: {
+  verifiedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 6,
+    gap: 3,
+    backgroundColor: 'rgba(6, 193, 103, 0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 12,
   },
-  pulsingGreenDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#06C167',
-  },
-  cloudBadgeText: {
-    fontSize: 10.5,
+  verifiedText: {
+    fontSize: 10,
     fontWeight: '700',
     color: '#06C167',
   },
-  sectionLabel: {
-    fontSize: 11,
+
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 48,
+  },
+
+  headerSection: {
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  mainHeading: {
+    fontSize: 28,
     fontWeight: '800',
-    color: '#64748B',
-    letterSpacing: 0.6,
+    letterSpacing: -0.6,
+    marginBottom: 6,
+  },
+  subHeading: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  // Role Selector Segment
+  sectionWrap: {
+    marginBottom: 18,
+  },
+  microLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
     marginBottom: 8,
   },
-  roleSegment: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 16,
+  microLabelLight: {
+    color: '#6B7280',
   },
-  roleTab: {
+  microLabelDark: {
+    color: '#9CA3AF',
+  },
+  roleSegmentContainer: {
+    flexDirection: 'row',
+    padding: 4,
+    borderRadius: 14,
+  },
+  segmentLight: {
+    backgroundColor: '#F3F4F6',
+  },
+  segmentDark: {
+    backgroundColor: '#161618',
+  },
+  roleSegmentButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
     borderRadius: 11,
-    gap: 6,
   },
-  roleTabActive: {
-    backgroundColor: '#06C167',
-    shadowColor: '#06C167',
+  roleSegmentActiveLight: {
+    backgroundColor: '#000000',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  roleSegmentActiveDark: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  roleTabText: {
+  roleSegmentText: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#64748B',
+    fontWeight: '600',
   },
-  roleTabTextActive: {
+  roleSegmentTextActiveLight: {
     color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  modeToggleRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(150,150,150,0.15)',
-    marginBottom: 16,
-  },
-  modeBtn: {
-    paddingVertical: 8,
-    marginRight: 20,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  modeBtnActive: {
-    borderBottomColor: '#06C167',
-  },
-  modeBtnText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#94A3B8',
-  },
-  modeBtnTextActive: {
-    color: '#06C167',
-    fontWeight: '800',
-  },
-  googleContinueBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    gap: 10,
-    marginBottom: 14,
-  },
-  googleBtnLight: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  googleBtnDark: {
-    backgroundColor: '#1E1E22',
-    borderColor: '#2E2E34',
-  },
-  googleIconBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  googleContinueText: {
-    fontSize: 14,
     fontWeight: '700',
-    color: '#0F172A',
   },
-  orDividerRow: {
+  roleSegmentTextActiveDark: {
+    color: '#000000',
+    fontWeight: '700',
+  },
+  roleHint: {
+    fontSize: 12,
+    marginTop: 7,
+    fontStyle: 'italic',
+  },
+  roleHintLight: {
+    color: '#6B7280',
+  },
+  roleHintDark: {
+    color: '#9CA3AF',
+  },
+
+  // Mode Switch Tabs (Sign In / Create Account)
+  modeTabsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  orDividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E2E8F0',
-  },
-  orLineDark: {
-    backgroundColor: '#27272A',
-  },
-  orDividerText: {
-    fontSize: 10.5,
-    fontWeight: '600',
-    color: '#94A3B8',
-    paddingHorizontal: 10,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    padding: 4,
+    borderRadius: 12,
     marginBottom: 20,
   },
-  cardDark: {
-    backgroundColor: '#121214',
-    borderColor: '#27272A',
+  modeTabsLight: {
+    backgroundColor: '#F3F4F6',
   },
-  formHeaderRow: {
+  modeTabsDark: {
+    backgroundColor: '#161618',
+  },
+  modeTab: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+  },
+  modeTabActiveLight: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  modeTabActiveDark: {
+    backgroundColor: '#27272A',
+  },
+  modeTabText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  // Google Single Sign-On
+  googleButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  googleButtonLight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(0, 0, 0, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  googleButtonDark: {
+    backgroundColor: '#161618',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  googleIconWrap: {
+    marginRight: 10,
+  },
+  googleButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  // Divider
+  dividerWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 22,
+  },
+  dividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+  dividerLineLight: {
+    backgroundColor: 'rgba(0, 0, 0, 0.10)',
+  },
+  dividerLineDark: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  dividerText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    paddingHorizontal: 12,
+  },
+  dividerTextLight: {
+    color: '#9CA3AF',
+  },
+  dividerTextDark: {
+    color: '#71717A',
+  },
+
+  // Input Fields
+  inputBlock: {
     marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(150,150,150,0.1)',
-  },
-  formHeaderTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: -0.2,
-  },
-  formHeaderSub: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 2,
-    lineHeight: 15,
-  },
-  inputHelperText: {
-    fontSize: 10.5,
-    color: '#94A3B8',
-    marginTop: 4,
-    marginLeft: 2,
-  },
-  inputGroup: {
-    marginBottom: 14,
   },
   inputLabel: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#334155',
-    marginBottom: 6,
+    marginBottom: 7,
   },
-  passwordLabelRow: {
+  labelWithActionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 7,
   },
   forgotPasswordText: {
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: '700',
     color: '#06C167',
   },
-  inputWrapper: {
+  inputField: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 12,
-    height: 48,
+    height: 52,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1.5,
   },
-  inputWrapperDark: {
-    backgroundColor: '#1C1C1E',
-    borderColor: '#2E2E32',
+  inputFieldLight: {
+    backgroundColor: '#F9FAFB',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
   },
-  input: {
+  inputFieldDark: {
+    backgroundColor: '#161618',
+    borderColor: 'rgba(255, 255, 255, 0.10)',
+  },
+  inputFocused: {
+    borderColor: '#06C167',
+    backgroundColor: 'rgba(6, 193, 103, 0.03)',
+  },
+  textInput: {
     flex: 1,
     fontSize: 14,
-    color: '#0F172A',
+    fontWeight: '500',
     marginLeft: 10,
+    paddingVertical: 0,
   },
-  vehiclePillRow: {
+  eyeButton: {
+    padding: 6,
+  },
+
+  // Vehicle Categories for Drivers
+  vehicleCategoryRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 4,
+    gap: 8,
   },
   vehiclePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'transparent',
+  },
+  vehiclePillLight: {
+    backgroundColor: '#F3F4F6',
+    borderColor: 'rgba(0, 0, 0, 0.06)',
+  },
+  vehiclePillDark: {
+    backgroundColor: '#1C1C1E',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   vehiclePillActive: {
     backgroundColor: '#06C167',
     borderColor: '#06C167',
   },
   vehiclePillText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '600',
   },
   vehiclePillTextActive: {
     color: '#FFFFFF',
+    fontWeight: '700',
   },
-  primaryBtn: {
+  dualInputRow: {
     flexDirection: 'row',
+    gap: 8,
+  },
+
+  // Primary Action Button (Electric Emerald)
+  primaryButton: {
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#06C167',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#06C167',
-    borderRadius: 14,
-    paddingVertical: 14,
-    marginTop: 8,
     shadowColor: '#06C167',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 3,
   },
-  primaryBtnText: {
+  primaryButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primaryButtonText: {
     fontSize: 15,
     fontWeight: '800',
     color: '#FFFFFF',
+    letterSpacing: -0.2,
   },
-  magicLinkBtn: {
+
+  // Passwordless Magic Link Button
+  magicLinkButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    marginTop: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(6, 193, 103, 0.08)',
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 12,
   },
-  magicLinkBtnDark: {
-    backgroundColor: 'rgba(6, 193, 103, 0.12)',
+  magicLinkLight: {
+    backgroundColor: '#F9FAFB',
+    borderColor: 'rgba(6, 193, 103, 0.3)',
+  },
+  magicLinkDark: {
+    backgroundColor: '#161618',
+    borderColor: 'rgba(6, 193, 103, 0.3)',
   },
   magicLinkText: {
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: '700',
+  },
+
+  // Switch Mode
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 22,
+  },
+  switchPromptText: {
+    fontSize: 13,
+  },
+  switchActionLink: {
+    fontSize: 13,
+    fontWeight: '800',
     color: '#06C167',
   },
-  demoSection: {
-    marginTop: 4,
-    marginBottom: 20,
+
+  // Footer & Security
+  footerBlock: {
+    marginTop: 32,
+    alignItems: 'center',
   },
-  dividerRow: {
+  securityRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 6,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#E2E8F0',
-  },
-  dividerText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#94A3B8',
-    paddingHorizontal: 10,
-    letterSpacing: 0.8,
-  },
-  demoButtonsGrid: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  demoCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  demoCardDark: {
-    backgroundColor: '#18181B',
-    borderColor: '#27272A',
-  },
-  demoEmoji: {
-    fontSize: 18,
-    marginBottom: 4,
-  },
-  demoTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  demoSub: {
-    fontSize: 9,
-    fontWeight: '600',
-    color: '#94A3B8',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  // Google Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  googleModalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: 35,
-  },
-  googleModalContentDark: {
-    backgroundColor: '#18181B',
-  },
-  googleModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(150,150,150,0.15)',
-  },
-  googleModalTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  googleModalSub: {
+  securityText: {
     fontSize: 11,
-    color: '#64748B',
+    fontWeight: '600',
   },
-  closeBtn: {
-    padding: 4,
+  termsText: {
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+    paddingHorizontal: 20,
   },
-  googleAccountCard: {
+
+  // Google Modal Styles
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 22,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  modalCardLight: {
+    backgroundColor: '#FFFFFF',
+  },
+  modalCardDark: {
+    backgroundColor: '#161618',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderWidth: 1,
+  },
+  modalHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+  },
+  googleIconBadgeLarge: {
+    width: 44,
+    height: 44,
     borderRadius: 14,
-    backgroundColor: '#F8FAFC',
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 12,
+    backgroundColor: 'rgba(234, 67, 53, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  googleAccountCardDark: {
-    backgroundColor: '#27272A',
-    borderColor: '#3F3F46',
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
-  googleAccountAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  googleAccountName: {
-    fontSize: 13.5,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  googleAccountEmail: {
-    fontSize: 11.5,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  googleAccountSub: {
-    fontSize: 10,
-    color: '#06C167',
-    fontWeight: '600',
+  modalSubtitle: {
+    fontSize: 12,
     marginTop: 2,
   },
-  addGoogleAccountBtn: {
-    flexDirection: 'row',
+  closeIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#3B82F6',
-    borderStyle: 'dashed',
-    gap: 8,
-    marginTop: 6,
   },
-  addGoogleAccountBtnDark: {
-    borderColor: '#3B82F6',
-  },
-  addGoogleAccountText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#3B82F6',
-  },
-  customGoogleBox: {
-    backgroundColor: '#F1F5F9',
-    padding: 14,
-    borderRadius: 14,
-    marginTop: 8,
-    gap: 8,
-  },
-  customGoogleBoxDark: {
-    backgroundColor: '#27272A',
-  },
-  customGoogleTitle: {
+  modalSecondaryLink: {
     fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 2,
-  },
-  customInput: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 42,
-    fontSize: 13,
-    color: '#0F172A',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-  },
-  customInputDark: {
-    backgroundColor: '#18181B',
-    borderColor: '#3F3F46',
-    color: '#FFFFFF',
-  },
-  customSubmitBtn: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  customSubmitText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  googleModalFooter: {
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(150,150,150,0.15)',
-  },
-  browserOAuthBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-  },
-  browserOAuthText: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#3B82F6',
-  },
-  switchModeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 20,
-  },
-  switchModeText: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  switchModeLink: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#06C167',
-  },
-  primaryOAuthBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 10,
-    marginBottom: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  primaryOAuthBtnDark: {
-    backgroundColor: '#1E1E22',
-    borderColor: '#3F3F46',
-  },
-  primaryOAuthBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
+    fontWeight: '600',
+    paddingVertical: 6,
   },
 });

@@ -28,6 +28,9 @@ import { chatService } from '../services/chatService';
 import { logisticsService } from '../services/logisticsService';
 import { Delivery } from '../types/logistics';
 import { supabaseService } from '../services/supabaseService';
+import { supabase } from '../config/supabase';
+import { Linking } from 'react-native';
+import { navigationRef } from '../navigation/navigationRef';
 
 interface AppContextType {
 
@@ -363,6 +366,110 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
     loadStoredData();
+  }, []);
+
+  // ── Root Deep Link & OAuth Listener ─────────────────────────────────────
+  useEffect(() => {
+    const handleIncomingAuthUrl = async (url: string) => {
+      if (!url) return;
+      if (
+        url.includes('auth-callback') ||
+        url.includes('verified_email') ||
+        url.includes('access_token') ||
+        url.includes('code=')
+      ) {
+        try {
+          const { profile, error } = await supabaseService.handleOAuthCallbackUrl(url);
+          if (!error && profile) {
+            updateUserProfile({
+              ...profile,
+              isLoggedIn: true,
+            });
+            const targetRole: UserRole =
+              profile.role === 'DRIVER' ? 'COURIER' : profile.role === 'FARMER' ? 'FARMER' : 'BUYER';
+            setCurrentRole(targetRole);
+            if (targetRole === 'COURIER') {
+              logisticsService.loginDriver(profile.email);
+            }
+            showToast(`Welcome, ${profile.name}! 🚀`, 'success');
+
+            // Automatically navigate to user dashboard
+            setTimeout(() => {
+              if (navigationRef.isReady()) {
+                if (targetRole === 'COURIER') {
+                  navigationRef.navigate('DriverDashboard' as any);
+                } else if (targetRole === 'FARMER') {
+                  navigationRef.navigate('FarmerDashboard' as any);
+                } else {
+                  navigationRef.navigate('BuyerDashboard' as any);
+                }
+              }
+            }, 100);
+          }
+        } catch (e) {
+          console.warn('Deep link auth processing exception:', e);
+        }
+      }
+    };
+
+    // Listen to incoming deep links while app is open
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      handleIncomingAuthUrl(url);
+    });
+
+    // Check if app was cold-started from an auth deep link
+    Linking.getInitialURL().then(initialUrl => {
+      if (initialUrl) {
+        handleIncomingAuthUrl(initialUrl);
+      }
+    });
+
+    // Listen to Supabase auth state change events
+    let authSubscription: any = null;
+    if (supabaseService.isConfigured()) {
+      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' && session?.user) {
+          try {
+            const { profile } = await supabaseService.syncUserProfileAfterAuth(session.user);
+            if (profile) {
+              updateUserProfile({
+                ...profile,
+                isLoggedIn: true,
+              });
+              const targetRole: UserRole =
+                profile.role === 'DRIVER' ? 'COURIER' : profile.role === 'FARMER' ? 'FARMER' : 'BUYER';
+              setCurrentRole(targetRole);
+              if (targetRole === 'COURIER') {
+                logisticsService.loginDriver(profile.email);
+              }
+              showToast(`Signed in as ${profile.name}! 🚀`, 'success');
+
+              setTimeout(() => {
+                if (navigationRef.isReady()) {
+                  if (targetRole === 'COURIER') {
+                    navigationRef.navigate('DriverDashboard' as any);
+                  } else if (targetRole === 'FARMER') {
+                    navigationRef.navigate('FarmerDashboard' as any);
+                  } else {
+                    navigationRef.navigate('BuyerDashboard' as any);
+                  }
+                }
+              }, 100);
+            }
+          } catch (err) {
+            console.warn('onAuthStateChange profile sync note:', err);
+          }
+        }
+      });
+      authSubscription = data?.subscription;
+    }
+
+    return () => {
+      sub.remove();
+      if (authSubscription) {
+        authSubscription.unsubscribe();
+      }
+    };
   }, []);
 
   const persistData = async (key: string, data: any) => {
