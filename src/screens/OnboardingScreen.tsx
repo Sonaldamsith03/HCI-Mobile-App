@@ -17,7 +17,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../types';
+import { RootStackParamList, UserRole } from '../types';
 import { Logo } from '../components/Logo';
 import { UberBottomNavBar } from '../components/UberBottomNavBar';
 import { useApp } from '../context/AppContext';
@@ -25,7 +25,7 @@ import { supabaseService } from '../services/supabaseService';
 
 export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBottomNav = false }) => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { userProfile, updateUserProfile, themeMode, showToast } = useApp();
+  const { userProfile, updateUserProfile, themeMode, showToast, setCurrentRole } = useApp();
   const isDark = themeMode === 'dark';
 
   // Auth & UI States
@@ -39,8 +39,8 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
     }
   }, [userProfile.isLoggedIn]);
 
-  // First-time Role Questionnaire State: null | 'FARMER' | 'BUYER' | 'OTHER'
-  const [selectedRoleType, setSelectedRoleType] = useState<'FARMER' | 'BUYER' | 'OTHER' | null>(null);
+  // First-time Role Questionnaire State: null | 'FARMER' | 'BUYER' | 'COURIER' | 'ADMIN' | 'OTHER'
+  const [selectedRoleType, setSelectedRoleType] = useState<'FARMER' | 'BUYER' | 'COURIER' | 'ADMIN' | 'OTHER' | null>(null);
 
   // Form input states
   const [fullName, setFullName] = useState('');
@@ -83,7 +83,7 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
   };
 
   // Select role to enter sign in/up
-  const handlePickRole = (role: 'FARMER' | 'BUYER' | 'OTHER') => {
+  const handlePickRole = (role: 'FARMER' | 'BUYER' | 'COURIER' | 'ADMIN' | 'OTHER') => {
     setSelectedRoleType(role);
     if (role === 'FARMER') {
       setEmailOrPhone('mateo@greenvalleyfarms.com');
@@ -93,6 +93,14 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
       setEmailOrPhone('sonal.perera@gmail.com');
       setPassword('demo1234');
       setFullName('Sonal Perera');
+    } else if (role === 'COURIER') {
+      setEmailOrPhone('kasun.driver@agrifleet.lk');
+      setPassword('driverpass1');
+      setFullName('Kasun Perera');
+    } else if (role === 'ADMIN') {
+      setEmailOrPhone('admin@farmby.com');
+      setPassword('admin123');
+      setFullName('Administrator');
     } else if (role === 'OTHER') {
       setEmailOrPhone('hybrid.partner@farmby.com');
       setPassword('dualpass123');
@@ -114,7 +122,7 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
     setIsLoading(true);
 
     const cleanEmail = emailOrPhone.trim().toLowerCase();
-    const isAdminLogin = cleanEmail === 'admin@farmby.com' || cleanEmail === 'admin';
+    const isAdminLogin = cleanEmail === 'admin@farmby.com' || cleanEmail === 'admin' || selectedRoleType === 'ADMIN';
 
     if (isAdminLogin) {
       setIsLoading(false);
@@ -125,22 +133,36 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
         avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
         isLoggedIn: true,
       });
+      setCurrentRole('ADMIN');
       setIsLoggedIn(true);
       showToast('Authenticated as Platform Administrator 🛡️', 'success');
+      navigation.navigate('AdminDashboard');
       return;
     }
 
-    const assignedRole = selectedRoleType || 'BUYER';
+    const assignedRole: UserRole =
+      selectedRoleType === 'COURIER'
+        ? 'COURIER'
+        : selectedRoleType === 'FARMER'
+        ? 'FARMER'
+        : selectedRoleType === 'OTHER'
+        ? 'OTHER'
+        : 'BUYER';
+
     const nameToSet =
       authMode === 'signup' && fullName.trim()
         ? fullName.trim()
-        : userProfile.name || (assignedRole === 'FARMER' ? 'Mateo Gutierrez' : 'Sonal Perera');
+        : userProfile.name || (assignedRole === 'FARMER' ? 'Mateo Gutierrez' : assignedRole === 'COURIER' ? 'Kasun Perera' : 'Sonal Perera');
 
     // Live Supabase Authentication
     if (supabaseService.isConfigured() && cleanEmail.includes('@')) {
       try {
         const validCloudRole: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN' =
-          assignedRole === 'FARMER' ? 'FARMER' : assignedRole === 'OTHER' ? 'BUYER' : 'BUYER';
+          assignedRole === 'FARMER'
+            ? 'FARMER'
+            : assignedRole === 'COURIER'
+            ? 'DRIVER'
+            : 'BUYER';
 
         if (authMode === 'signup') {
           const { user, profile, error } = await supabaseService.signUp(cleanEmail, password, {
@@ -162,8 +184,17 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
             role: assignedRole,
             isLoggedIn: true,
           });
+          setCurrentRole(assignedRole);
           setIsLoggedIn(true);
-          showToast(`Cloud account created for ${nameToSet}! 🚀`, 'success');
+          showToast(`Cloud account created for ${nameToSet}! (${assignedRole}) 🚀`, 'success');
+
+          if (assignedRole === 'COURIER') {
+            navigation.navigate('DriverDashboard');
+          } else if (assignedRole === 'FARMER') {
+            navigation.navigate('FarmerDashboard');
+          } else {
+            navigation.navigate('BuyerDashboard');
+          }
           return;
         } else {
           // Login
@@ -173,7 +204,8 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
             const isDemo =
               cleanEmail.includes('greenvalley') ||
               cleanEmail.includes('demo') ||
-              cleanEmail.includes('sonal');
+              cleanEmail.includes('sonal') ||
+              cleanEmail.includes('agrifleet');
             if (!isDemo) {
               setIsLoading(false);
               showToast(error, 'warn');
@@ -183,15 +215,34 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
 
           setIsLoading(false);
           const activeName = profile?.name || nameToSet;
-          const activeRole = (profile?.role as any) || assignedRole;
+          const activeRole: UserRole =
+            (profile?.role as any) === 'ADMIN'
+              ? 'ADMIN'
+              : (profile?.role as any) === 'DRIVER' || (profile?.role as any) === 'COURIER'
+              ? 'COURIER'
+              : (profile?.role as any) === 'FARMER'
+              ? 'FARMER'
+              : assignedRole;
+
           updateUserProfile({
             name: activeName,
             email: cleanEmail,
             role: activeRole,
             isLoggedIn: true,
           });
+          setCurrentRole(activeRole);
           setIsLoggedIn(true);
           showToast(`Welcome back, ${activeName}! (${activeRole})`, 'success');
+
+          if (activeRole === 'ADMIN') {
+            navigation.navigate('AdminDashboard');
+          } else if (activeRole === 'COURIER') {
+            navigation.navigate('DriverDashboard');
+          } else if (activeRole === 'FARMER') {
+            navigation.navigate('FarmerDashboard');
+          } else {
+            navigation.navigate('BuyerDashboard');
+          }
           return;
         }
       } catch (err: any) {
@@ -208,6 +259,7 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
       role: assignedRole,
       isLoggedIn: true,
     });
+    setCurrentRole(assignedRole);
     setIsLoggedIn(true);
     showToast(
       authMode === 'login'
@@ -215,6 +267,13 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
         : `Account created! Welcome, ${nameToSet}!`,
       'success'
     );
+    if (assignedRole === 'COURIER') {
+      navigation.navigate('DriverDashboard');
+    } else if (assignedRole === 'FARMER') {
+      navigation.navigate('FarmerDashboard');
+    } else {
+      navigation.navigate('BuyerDashboard');
+    }
   };
 
   // Google Login
@@ -222,15 +281,34 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
     setIsLoading(true);
     setTimeout(() => {
       setIsLoading(false);
-      const assignedRole = selectedRoleType || 'BUYER';
+      const assignedRole: UserRole =
+        selectedRoleType === 'ADMIN'
+          ? 'ADMIN'
+          : selectedRoleType === 'COURIER'
+          ? 'COURIER'
+          : selectedRoleType === 'FARMER'
+          ? 'FARMER'
+          : selectedRoleType === 'OTHER'
+          ? 'OTHER'
+          : 'BUYER';
+
       const defaultName =
-        assignedRole === 'FARMER'
+        assignedRole === 'ADMIN'
+          ? 'Administrator'
+          : assignedRole === 'COURIER'
+          ? 'Kasun Perera'
+          : assignedRole === 'FARMER'
           ? 'Mateo Gutierrez'
           : assignedRole === 'OTHER'
           ? 'Sonal Hybrid Partner'
           : 'Sonal Perera';
+
       const defaultEmail =
-        assignedRole === 'FARMER'
+        assignedRole === 'ADMIN'
+          ? 'admin.google@farmby.com'
+          : assignedRole === 'COURIER'
+          ? 'kasun.driver@agrifleet.lk'
+          : assignedRole === 'FARMER'
           ? 'mateo.google@greenvalley.com'
           : assignedRole === 'OTHER'
           ? 'sonal.hybrid@farmby.com'
@@ -243,8 +321,19 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
         role: assignedRole,
         isLoggedIn: true,
       });
+      setCurrentRole(assignedRole);
       setIsLoggedIn(true);
       showToast(`Logged in with Google as ${assignedRole}`, 'success');
+
+      if (assignedRole === 'ADMIN') {
+        navigation.navigate('AdminDashboard');
+      } else if (assignedRole === 'COURIER') {
+        navigation.navigate('DriverDashboard');
+      } else if (assignedRole === 'FARMER') {
+        navigation.navigate('FarmerDashboard');
+      } else {
+        navigation.navigate('BuyerDashboard');
+      }
     }, 700);
   };
 
@@ -661,7 +750,7 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
                     isDark ? styles.cardDark : styles.cardLight,
                     { borderColor: isDark ? '#276EF1' : '#276EF1', borderWidth: 1.5 },
                   ]}
-                  onPress={() => navigation.navigate('DriverAuth')}
+                  onPress={() => handlePickRole('COURIER')}
                   activeOpacity={0.85}
                 >
                   <View style={[styles.roleIconWrap, { backgroundColor: 'rgba(39, 110, 241, 0.18)' }]}>
@@ -679,6 +768,33 @@ export const OnboardingScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hideBo
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color="#276EF1" />
+                </TouchableOpacity>
+
+                {/* Choice 5: Administrator & Governance */}
+                <TouchableOpacity
+                  style={[
+                    styles.roleOptionCard,
+                    isDark ? styles.cardDark : styles.cardLight,
+                    { borderColor: isDark ? '#F59E0B' : '#F59E0B', borderWidth: 1.5 },
+                  ]}
+                  onPress={() => handlePickRole('ADMIN')}
+                  activeOpacity={0.85}
+                >
+                  <View style={[styles.roleIconWrap, { backgroundColor: 'rgba(245, 158, 11, 0.18)' }]}>
+                    <Ionicons name="shield-checkmark" size={26} color="#F59E0B" />
+                  </View>
+                  <View style={styles.roleCardInfo}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.roleCardTitle, isDark && styles.textWhite]}>Platform Administrator</Text>
+                      <View style={[styles.rolePill, { backgroundColor: '#F59E0B' }]}>
+                        <Text style={[styles.rolePillText, { color: '#000000' }]}>ADMIN</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.roleCardDesc}>
+                      Governance panel, KYC verification, dispute mediation & escrow safety oversight.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#F59E0B" />
                 </TouchableOpacity>
               </View>
 

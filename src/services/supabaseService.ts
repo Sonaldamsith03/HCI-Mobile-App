@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../config/supabase';
-import { Produce, Transaction } from '../types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Produce, Transaction, UserRole } from '../types';
 import { Delivery, Driver } from '../types/logistics';
 
 // ── JWT Payload Decoder (Works across Browser and React Native) ─────────────
@@ -654,7 +655,26 @@ export const supabaseService = {
         const nameMatch = url.match(/[?&]name=([^&#]+)/);
         const roleMatch = url.match(/[?&]role=([^&#]+)/);
         const resolvedName = nameMatch && nameMatch[1] ? decodeURIComponent(nameMatch[1]) : cleanEmail.split('@')[0];
-        const resolvedRole = (roleMatch && roleMatch[1] ? decodeURIComponent(roleMatch[1]) : 'BUYER') as any;
+        let rawRole = (roleMatch && roleMatch[1] ? decodeURIComponent(roleMatch[1]) : '') as any;
+
+        if (!rawRole || rawRole === 'BUYER') {
+          try {
+            const pendingRole = await AsyncStorage.getItem('@agriconnect_pending_role');
+            if (pendingRole) {
+              rawRole = pendingRole;
+              await AsyncStorage.removeItem('@agriconnect_pending_role');
+            }
+          } catch {}
+        }
+
+        const resolvedRole: UserRole =
+          rawRole === 'ADMIN'
+            ? 'ADMIN'
+            : rawRole === 'DRIVER' || rawRole === 'COURIER'
+            ? 'COURIER'
+            : rawRole === 'FARMER'
+            ? 'FARMER'
+            : 'BUYER';
 
         // Create immediate profile for 0ms lag
         const immediateProfile = {
@@ -712,13 +732,29 @@ export const supabaseService = {
             jwtPayload.user_metadata?.name ||
             jwtEmail.split('@')[0];
 
+          let pendingRole: any = null;
+          try {
+            pendingRole = await AsyncStorage.getItem('@agriconnect_pending_role');
+            if (pendingRole) await AsyncStorage.removeItem('@agriconnect_pending_role');
+          } catch {}
+
+          const rawRole = pendingRole || jwtPayload.user_metadata?.role || 'BUYER';
+          const resolvedRole: UserRole =
+            rawRole === 'ADMIN'
+              ? 'ADMIN'
+              : rawRole === 'DRIVER' || rawRole === 'COURIER'
+              ? 'COURIER'
+              : rawRole === 'FARMER'
+              ? 'FARMER'
+              : 'BUYER';
+
           const jwtProfile = {
             id: jwtPayload.sub || `usr-${jwtEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
             name: jwtName,
             email: jwtEmail,
             avatarUrl: jwtPayload.user_metadata?.avatar_url || jwtPayload.user_metadata?.picture || '',
-            role: 'BUYER' as const,
-            walletBalance: 12500,
+            role: resolvedRole,
+            walletBalance: resolvedRole === 'FARMER' ? 24500 : 12500,
             escrowBalance: 0,
             savedAddresses: ['Central Delivery Hub, Colombo'],
             defaultAddress: 'Central Delivery Hub, Colombo',
@@ -735,7 +771,7 @@ export const supabaseService = {
             email: jwtEmail,
             name: jwtName,
             avatarUrl: jwtProfile.avatarUrl,
-            role: 'BUYER',
+            role: resolvedRole,
           }).catch((e: any) => console.warn('Background Google sync note:', e));
 
           return {
@@ -779,7 +815,26 @@ export const supabaseService = {
     const cleanEmail = (user.email || '').trim().toLowerCase();
     const metadataName = user.user_metadata?.full_name || user.user_metadata?.name || cleanEmail.split('@')[0];
     const metadataAvatar = user.user_metadata?.avatar_url || user.user_metadata?.picture || '';
-    const metadataRole = (user.user_metadata?.role as any) || 'BUYER';
+    let metadataRole = user.user_metadata?.role as any;
+
+    if (!metadataRole) {
+      try {
+        const pending = await AsyncStorage.getItem('@agriconnect_pending_role');
+        if (pending) {
+          metadataRole = pending;
+          await AsyncStorage.removeItem('@agriconnect_pending_role');
+        }
+      } catch {}
+    }
+
+    const dbRoleToSave: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN' =
+      metadataRole === 'ADMIN'
+        ? 'ADMIN'
+        : metadataRole === 'COURIER' || metadataRole === 'DRIVER'
+        ? 'DRIVER'
+        : metadataRole === 'FARMER'
+        ? 'FARMER'
+        : 'BUYER';
 
     let { data: profileRecord } = await supabase
       .from('profiles')
@@ -795,25 +850,48 @@ export const supabaseService = {
           name: metadataName,
           email: cleanEmail,
           avatar_url: metadataAvatar,
-          role: metadataRole,
-          wallet_balance: metadataRole === 'FARMER' ? 24500 : 12500,
+          role: dbRoleToSave,
+          wallet_balance: dbRoleToSave === 'FARMER' ? 24500 : 12500,
           escrow_balance: 0,
           status: 'active',
         })
         .select()
         .single();
       profileRecord = created;
+    } else if (metadataRole && metadataRole !== profileRecord.role) {
+      // User explicitly picked a different role during this login flow
+      const { data: updated } = await supabase
+        .from('profiles')
+        .update({
+          role: dbRoleToSave,
+          name: metadataName || profileRecord.name,
+        })
+        .eq('id', profileRecord.id)
+        .select()
+        .single();
+      if (updated) {
+        profileRecord = updated;
+      }
     }
+
+    const appRole: UserRole =
+      profileRecord?.role === 'ADMIN'
+        ? 'ADMIN'
+        : profileRecord?.role === 'DRIVER' || profileRecord?.role === 'COURIER'
+        ? 'COURIER'
+        : profileRecord?.role === 'FARMER'
+        ? 'FARMER'
+        : 'BUYER';
 
     const formatted = {
       id: profileRecord?.id || user.id,
       name: profileRecord?.name || metadataName,
-      role: profileRecord?.role || metadataRole,
+      role: appRole,
       email: profileRecord?.email || cleanEmail,
       phone: profileRecord?.phone || '',
       avatarUrl: profileRecord?.avatar_url || metadataAvatar,
       defaultAddress: profileRecord?.default_address || 'Central Delivery Hub, Colombo',
-      walletBalance: Number(profileRecord?.wallet_balance ?? 12500),
+      walletBalance: Number(profileRecord?.wallet_balance ?? (appRole === 'FARMER' ? 24500 : 12500)),
       escrowBalance: Number(profileRecord?.escrow_balance ?? 0),
       savedAddresses: [profileRecord?.default_address || 'Central Delivery Hub, Colombo'],
       isLoggedIn: true,
@@ -826,13 +904,24 @@ export const supabaseService = {
     email: string;
     name: string;
     avatarUrl?: string;
-    role: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN';
+    role: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN' | 'COURIER';
   }): Promise<{ user: any; profile: any; error: string | null }> {
     if (!isSupabaseConfigured()) {
       return { user: null, profile: null, error: 'Supabase is not configured' };
     }
     try {
       const cleanEmail = googleAccount.email.trim().toLowerCase();
+      const dbRole: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN' =
+        googleAccount.role === 'ADMIN'
+          ? 'ADMIN'
+          : googleAccount.role === 'COURIER' || googleAccount.role === 'DRIVER'
+          ? 'DRIVER'
+          : googleAccount.role === 'FARMER'
+          ? 'FARMER'
+          : 'BUYER';
+
+      const appRole: UserRole =
+        dbRole === 'DRIVER' ? 'COURIER' : dbRole;
 
       // Upsert into public.profiles
       const { data: existing } = await supabase
@@ -847,7 +936,7 @@ export const supabaseService = {
           .from('profiles')
           .update({
             name: googleAccount.name,
-            role: googleAccount.role,
+            role: dbRole,
             avatar_url: googleAccount.avatarUrl || existing.avatar_url,
           })
           .eq('id', existing.id)
@@ -860,11 +949,11 @@ export const supabaseService = {
           .insert({
             name: googleAccount.name,
             email: cleanEmail,
-            role: googleAccount.role,
+            role: dbRole,
             avatar_url:
               googleAccount.avatarUrl ||
               'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-            wallet_balance: googleAccount.role === 'FARMER' ? 24500 : 12500,
+            wallet_balance: dbRole === 'FARMER' ? 24500 : 12500,
             escrow_balance: 0,
             status: 'active',
           })
@@ -875,14 +964,14 @@ export const supabaseService = {
 
       const formattedProfile = {
         name: profileRecord?.name || googleAccount.name,
-        role: profileRecord?.role || googleAccount.role,
+        role: appRole,
         email: cleanEmail,
         avatarUrl:
           profileRecord?.avatar_url ||
           googleAccount.avatarUrl ||
           'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
         defaultAddress: profileRecord?.default_address || 'Central Delivery Hub #4B, Green Valley',
-        walletBalance: Number(profileRecord?.wallet_balance ?? (googleAccount.role === 'FARMER' ? 24500 : 12500)),
+        walletBalance: Number(profileRecord?.wallet_balance ?? (dbRole === 'FARMER' ? 24500 : 12500)),
         escrowBalance: Number(profileRecord?.escrow_balance ?? 0),
         savedAddresses: [profileRecord?.default_address || 'Central Delivery Hub #4B, Green Valley'],
         isLoggedIn: true,
@@ -899,17 +988,42 @@ export const supabaseService = {
   },
 
   // ── Supabase Email Service: Magic Link & Password Reset ─────────────────
-  async sendMagicLink(email: string): Promise<{ success: boolean; error: string | null }> {
+  async sendMagicLink(
+    email: string,
+    role?: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN' | 'COURIER'
+  ): Promise<{ success: boolean; error: string | null }> {
     if (!isSupabaseConfigured()) {
       return { success: false, error: 'Supabase is not configured' };
     }
     try {
       const cleanEmail = email.trim().toLowerCase();
       const redirectTo = typeof window !== 'undefined' && window.location ? window.location.origin : undefined;
+      const normalizedRole = role === 'COURIER' ? 'DRIVER' : role;
+
+      if (normalizedRole) {
+        try {
+          await AsyncStorage.setItem('@agriconnect_pending_role', normalizedRole === 'DRIVER' ? 'COURIER' : normalizedRole);
+          const { data: existing } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('email', cleanEmail)
+            .maybeSingle();
+          if (existing) {
+            await supabase
+              .from('profiles')
+              .update({ role: normalizedRole })
+              .eq('id', existing.id);
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
       const { error } = await supabase.auth.signInWithOtp({
         email: cleanEmail,
         options: {
           emailRedirectTo: redirectTo,
+          data: normalizedRole ? { role: normalizedRole } : undefined,
         },
       });
       if (error) {

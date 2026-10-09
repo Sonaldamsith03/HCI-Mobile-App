@@ -49,6 +49,9 @@ export const OAuthWebRedirect: React.FC = () => {
             if (payload?.email) {
               emailToPass = payload.email;
               nameToPass = payload.user_metadata?.full_name || payload.user_metadata?.name || payload.email.split('@')[0];
+              if (payload.user_metadata?.role) {
+                roleToPass = payload.user_metadata.role;
+              }
             }
           }
         }

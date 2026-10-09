@@ -16,6 +16,7 @@ import {
   Linking,
   Modal,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -34,7 +35,7 @@ export const AuthScreen: React.FC = () => {
 
   // Auth Modes & Selected Role
   const [authMode, setAuthMode] = useState<'login' | 'signup'>(route.params?.initialMode || 'login');
-  const [selectedRole, setSelectedRole] = useState<'BUYER' | 'FARMER' | 'COURIER'>(
+  const [selectedRole, setSelectedRole] = useState<'BUYER' | 'FARMER' | 'COURIER' | 'ADMIN'>(
     route.params?.initialRole || 'BUYER'
   );
 
@@ -91,13 +92,17 @@ export const AuthScreen: React.FC = () => {
   useEffect(() => {
     if (userProfile.isLoggedIn) {
       const resolvedRole: UserRole =
-        userProfile.role === 'COURIER'
+        userProfile.role === 'ADMIN'
+          ? 'ADMIN'
+          : userProfile.role === 'COURIER' || (userProfile.role as any) === 'DRIVER'
           ? 'COURIER'
           : userProfile.role === 'FARMER'
           ? 'FARMER'
           : 'BUYER';
       setCurrentRole(resolvedRole);
-      if (resolvedRole === 'COURIER') {
+      if (resolvedRole === 'ADMIN') {
+        navigation.navigate('AdminDashboard');
+      } else if (resolvedRole === 'COURIER') {
         navigation.navigate('DriverDashboard');
       } else if (resolvedRole === 'FARMER') {
         navigation.navigate('FarmerDashboard');
@@ -127,10 +132,18 @@ export const AuthScreen: React.FC = () => {
         if (profile) {
           updateUserProfile(profile);
           const resolvedRole: UserRole =
-            profile.role === 'DRIVER' ? 'COURIER' : profile.role === 'FARMER' ? 'FARMER' : 'BUYER';
+            profile.role === 'ADMIN'
+              ? 'ADMIN'
+              : profile.role === 'DRIVER' || profile.role === 'COURIER'
+              ? 'COURIER'
+              : profile.role === 'FARMER'
+              ? 'FARMER'
+              : 'BUYER';
           setCurrentRole(resolvedRole);
-          showToast(`Welcome, ${profile.name}! 🚀`, 'success');
-          if (resolvedRole === 'COURIER') {
+          showToast(`Welcome, ${profile.name}! (${resolvedRole}) 🚀`, 'success');
+          if (resolvedRole === 'ADMIN') {
+            navigation.navigate('AdminDashboard');
+          } else if (resolvedRole === 'COURIER') {
             navigation.navigate('DriverDashboard');
           } else if (resolvedRole === 'FARMER') {
             navigation.navigate('FarmerDashboard');
@@ -186,8 +199,14 @@ export const AuthScreen: React.FC = () => {
     setShowGoogleModal(false);
 
     try {
-      const cloudRole: 'BUYER' | 'FARMER' | 'DRIVER' =
-        selectedRole === 'FARMER' ? 'FARMER' : selectedRole === 'COURIER' ? 'DRIVER' : 'BUYER';
+      const cloudRole: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN' =
+        selectedRole === 'ADMIN'
+          ? 'ADMIN'
+          : selectedRole === 'FARMER'
+          ? 'FARMER'
+          : selectedRole === 'COURIER'
+          ? 'DRIVER'
+          : 'BUYER';
 
       const derivedName = fullName.trim() || cleanEmail.split('@')[0];
 
@@ -212,9 +231,11 @@ export const AuthScreen: React.FC = () => {
           logisticsService.loginDriver(cleanEmail);
         }
 
-        showToast(`Signed in with Google as ${profile.name}! 🚀`, 'success');
+        showToast(`Signed in with Google as ${profile.name} (${selectedRole})! 🚀`, 'success');
 
-        if (selectedRole === 'COURIER') {
+        if (selectedRole === 'ADMIN') {
+          navigation.navigate('AdminDashboard');
+        } else if (selectedRole === 'COURIER') {
           navigation.navigate('DriverDashboard');
         } else if (selectedRole === 'FARMER') {
           navigation.navigate('FarmerDashboard');
@@ -244,6 +265,8 @@ export const AuthScreen: React.FC = () => {
     setShowGoogleModal(false);
     setIsGoogleLoading(true);
     try {
+      await AsyncStorage.setItem('@agriconnect_pending_role', selectedRole);
+
       const redirectUri =
         typeof window !== 'undefined' && window.location && window.location.origin
           ? window.location.origin
@@ -275,16 +298,29 @@ export const AuthScreen: React.FC = () => {
       return;
     }
 
+    const cloudRole: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN' =
+      selectedRole === 'ADMIN'
+        ? 'ADMIN'
+        : selectedRole === 'FARMER'
+        ? 'FARMER'
+        : selectedRole === 'COURIER'
+        ? 'DRIVER'
+        : 'BUYER';
+
+    try {
+      await AsyncStorage.setItem('@agriconnect_pending_role', selectedRole);
+    } catch {}
+
     setIsSendingMagicLink(true);
-    const { success, error } = await supabaseService.sendMagicLink(cleanEmail);
+    const { success, error } = await supabaseService.sendMagicLink(cleanEmail, cloudRole);
     setIsSendingMagicLink(false);
 
     if (success) {
       Alert.alert(
         'Magic Link Sent! ✉️',
-        `A secure, single-use login link has been dispatched to:\n\n${cleanEmail}\n\nTap the link inside your email to sign in automatically.`
+        `A secure login link for the ${roleDetails[selectedRole].title} role has been dispatched to:\n\n${cleanEmail}\n\nTap the link inside your email to sign in directly as a ${roleDetails[selectedRole].title}.`
       );
-      showToast(`Magic login link sent to ${cleanEmail}`, 'success');
+      showToast(`Magic login link (${roleDetails[selectedRole].title}) sent to ${cleanEmail}`, 'success');
     } else {
       Alert.alert('Email Service Notice', error || 'Failed to dispatch magic link email.');
     }
@@ -359,8 +395,14 @@ export const AuthScreen: React.FC = () => {
 
     try {
       if (authMode === 'signup') {
-        const cloudRole: 'BUYER' | 'FARMER' | 'DRIVER' =
-          selectedRole === 'FARMER' ? 'FARMER' : selectedRole === 'COURIER' ? 'DRIVER' : 'BUYER';
+        const cloudRole: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN' =
+          selectedRole === 'ADMIN'
+            ? 'ADMIN'
+            : selectedRole === 'FARMER'
+            ? 'FARMER'
+            : selectedRole === 'COURIER'
+            ? 'DRIVER'
+            : 'BUYER';
 
         // 1. Live Supabase Auth sign up
         const { profile, error } = await supabaseService.signUp(cleanEmail, password, {
@@ -420,10 +462,12 @@ export const AuthScreen: React.FC = () => {
         setCurrentRole(selectedRole);
 
         setIsLoading(false);
-        showToast(`Welcome to FarmBy, ${fullName.trim()}! 🚀`, 'success');
+        showToast(`Welcome to FarmBy, ${fullName.trim()}! (${selectedRole}) 🚀`, 'success');
 
         // Route to respective dashboard
-        if (selectedRole === 'COURIER') {
+        if (selectedRole === 'ADMIN') {
+          navigation.navigate('AdminDashboard');
+        } else if (selectedRole === 'COURIER') {
           navigation.navigate('DriverDashboard');
         } else if (selectedRole === 'FARMER') {
           navigation.navigate('FarmerDashboard');
@@ -456,10 +500,12 @@ export const AuthScreen: React.FC = () => {
         }
 
         const resolvedRole: UserRole =
-          profile?.role === 'FARMER'
-            ? 'FARMER'
-            : profile?.role === 'DRIVER'
+          profile?.role === 'ADMIN'
+            ? 'ADMIN'
+            : profile?.role === 'DRIVER' || profile?.role === 'COURIER'
             ? 'COURIER'
+            : profile?.role === 'FARMER'
+            ? 'FARMER'
             : selectedRole;
 
         const resolvedName = profile?.name || cleanEmail.split('@')[0];
@@ -481,9 +527,11 @@ export const AuthScreen: React.FC = () => {
         }
 
         setIsLoading(false);
-        showToast(`Welcome back, ${resolvedName}!`, 'success');
+        showToast(`Welcome back, ${resolvedName}! (${resolvedRole})`, 'success');
 
-        if (resolvedRole === 'COURIER') {
+        if (resolvedRole === 'ADMIN') {
+          navigation.navigate('AdminDashboard');
+        } else if (resolvedRole === 'COURIER') {
           navigation.navigate('DriverDashboard');
         } else if (resolvedRole === 'FARMER') {
           navigation.navigate('FarmerDashboard');
@@ -512,6 +560,11 @@ export const AuthScreen: React.FC = () => {
       title: 'Driver',
       subtitle: 'Deliver farm shipments with intelligent route dispatch',
       icon: 'car-outline' as const,
+    },
+    ADMIN: {
+      title: 'Admin',
+      subtitle: 'Platform oversight, dispute resolution & governance',
+      icon: 'shield-checkmark-outline' as const,
     },
   };
 
@@ -585,7 +638,7 @@ export const AuthScreen: React.FC = () => {
               ACCOUNT ROLE
             </Text>
             <View style={[styles.roleSegmentContainer, isDark ? styles.segmentDark : styles.segmentLight]}>
-              {(['BUYER', 'FARMER', 'COURIER'] as const).map(role => {
+              {(['BUYER', 'FARMER', 'COURIER', 'ADMIN'] as const).map(role => {
                 const isActive = selectedRole === role;
                 const info = roleDetails[role];
                 return (
@@ -1156,8 +1209,50 @@ export const AuthScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
 
+            {/* Role Selection inside Google Modal */}
+            <View style={{ marginTop: 14, marginBottom: 8 }}>
+              <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
+                SIGN IN AS ROLE
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
+                {(['BUYER', 'FARMER', 'COURIER', 'ADMIN'] as const).map(r => {
+                  const isCurActive = selectedRole === r;
+                  return (
+                    <TouchableOpacity
+                      key={r}
+                      onPress={() => setSelectedRole(r)}
+                      style={{
+                        flex: 1,
+                        paddingVertical: 7,
+                        borderRadius: 8,
+                        alignItems: 'center',
+                        backgroundColor: isCurActive
+                          ? (isDark ? '#FFFFFF' : '#000000')
+                          : (isDark ? '#27272A' : '#F4F4F5'),
+                        borderWidth: 1,
+                        borderColor: isCurActive ? (isDark ? '#FFFFFF' : '#000000') : 'transparent',
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontWeight: '800',
+                          color: isCurActive
+                            ? (isDark ? '#000000' : '#FFFFFF')
+                            : (isDark ? '#A1A1AA' : '#71717A'),
+                        }}
+                      >
+                        {r === 'COURIER' ? 'DRIVER' : r}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
             {/* Google Email Input */}
-            <View style={{ marginTop: 20, marginBottom: 16 }}>
+            <View style={{ marginTop: 8, marginBottom: 16 }}>
               <Text style={[styles.inputLabel, isDark ? styles.textWhite : styles.textBlack]}>
                 Your Google Email Address
               </Text>

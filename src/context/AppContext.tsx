@@ -337,6 +337,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               defaultAddress:
                 parsed.defaultAddress || INITIAL_USER_PROFILE.defaultAddress || 'Colombo 03, Western Province',
             });
+            if (parsed.role) {
+              const mappedStoredRole: UserRole =
+                parsed.role === 'ADMIN'
+                  ? 'ADMIN'
+                  : parsed.role === 'DRIVER' || parsed.role === 'COURIER'
+                  ? 'COURIER'
+                  : parsed.role === 'FARMER'
+                  ? 'FARMER'
+                  : 'BUYER';
+              setCurrentRole(mappedStoredRole);
+            }
           } catch {
             setUserProfile(INITIAL_USER_PROFILE);
           }
@@ -386,17 +397,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               isLoggedIn: true,
             });
             const targetRole: UserRole =
-              profile.role === 'DRIVER' ? 'COURIER' : profile.role === 'FARMER' ? 'FARMER' : 'BUYER';
+              profile.role === 'ADMIN'
+                ? 'ADMIN'
+                : profile.role === 'DRIVER' || profile.role === 'COURIER'
+                ? 'COURIER'
+                : profile.role === 'FARMER'
+                ? 'FARMER'
+                : 'BUYER';
             setCurrentRole(targetRole);
             if (targetRole === 'COURIER') {
               logisticsService.loginDriver(profile.email);
             }
-            showToast(`Welcome, ${profile.name}! 🚀`, 'success');
+            showToast(`Welcome, ${profile.name}! (${targetRole}) 🚀`, 'success');
 
             // Automatically navigate to user dashboard
             setTimeout(() => {
               if (navigationRef.isReady()) {
-                if (targetRole === 'COURIER') {
+                if (targetRole === 'ADMIN') {
+                  navigationRef.navigate('AdminDashboard' as any);
+                } else if (targetRole === 'COURIER') {
                   navigationRef.navigate('DriverDashboard' as any);
                 } else if (targetRole === 'FARMER') {
                   navigationRef.navigate('FarmerDashboard' as any);
@@ -437,16 +456,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 isLoggedIn: true,
               });
               const targetRole: UserRole =
-                profile.role === 'DRIVER' ? 'COURIER' : profile.role === 'FARMER' ? 'FARMER' : 'BUYER';
+                profile.role === 'ADMIN'
+                  ? 'ADMIN'
+                  : profile.role === 'DRIVER' || profile.role === 'COURIER'
+                  ? 'COURIER'
+                  : profile.role === 'FARMER'
+                  ? 'FARMER'
+                  : 'BUYER';
               setCurrentRole(targetRole);
               if (targetRole === 'COURIER') {
                 logisticsService.loginDriver(profile.email);
               }
-              showToast(`Signed in as ${profile.name}! 🚀`, 'success');
+              showToast(`Signed in as ${profile.name}! (${targetRole}) 🚀`, 'success');
 
               setTimeout(() => {
                 if (navigationRef.isReady()) {
-                  if (targetRole === 'COURIER') {
+                  if (targetRole === 'ADMIN') {
+                    navigationRef.navigate('AdminDashboard' as any);
+                  } else if (targetRole === 'COURIER') {
                     navigationRef.navigate('DriverDashboard' as any);
                   } else if (targetRole === 'FARMER') {
                     navigationRef.navigate('FarmerDashboard' as any);

@@ -147,7 +147,7 @@ export * from './logistics';
 
 export type RootStackParamList = {
   MainTabs: { tab?: 'home' | 'services' | 'activity' | 'account' } | undefined;
-  Auth: { initialRole?: 'BUYER' | 'FARMER' | 'COURIER'; initialMode?: 'login' | 'signup' } | undefined;
+  Auth: { initialRole?: 'BUYER' | 'FARMER' | 'COURIER' | 'ADMIN'; initialMode?: 'login' | 'signup' } | undefined;
   Landing: undefined;
   Onboarding: undefined;
   RoleSelection: undefined;

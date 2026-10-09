@@ -160,13 +160,17 @@ export const RoleSelectionScreen: React.FC<{ hideBottomNav?: boolean }> = ({ hid
             ]}
             onPress={() => {
               const targetRole =
-                userProfile.role === 'COURIER'
+                userProfile.role === 'ADMIN'
+                  ? 'ADMIN'
+                  : userProfile.role === 'COURIER'
                   ? 'COURIER'
                   : userProfile.role === 'FARMER'
                   ? 'FARMER'
                   : 'BUYER';
               const targetRoute =
-                targetRole === 'COURIER'
+                targetRole === 'ADMIN'
+                  ? 'AdminDashboard'
+                  : targetRole === 'COURIER'
                   ? 'LogisticsDashboard'
                   : targetRole === 'FARMER'
                   ? 'FarmerDashboard'
