@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../config/supabase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Produce, Transaction, UserRole } from '../types';
+import { Produce, Transaction, UserRole, SystemUser } from '../types';
 import { Delivery, Driver } from '../types/logistics';
 
 // ── JWT Payload Decoder (Works across Browser and React Native) ─────────────
@@ -85,18 +85,18 @@ export const supabaseService = {
       const { data, error } = await supabase
         .from('produce')
         .insert({
-          farmer_name: crop.farmerName,
-          farmer_phone: crop.farmerPhone,
+          farmer_name: crop.farmerName || 'Local Farmer',
+          farmer_phone: crop.farmerPhone || '+94 77 123 4567',
           name: crop.name,
           category: crop.category,
           price: crop.price,
           quantity: crop.quantity,
-          unit: crop.unit,
-          location: crop.location,
-          description: crop.description,
-          image_url: crop.imageUrl,
-          middleman_price: crop.middlemanPrice,
-          harvest_date: crop.harvestDate,
+          unit: crop.unit || 'kg',
+          location: crop.location || 'Negombo Agricultural Hub, Western Province',
+          description: crop.description || '',
+          image_url: crop.imageUrl || '',
+          middleman_price: crop.middlemanPrice || crop.price * 1.5,
+          harvest_date: crop.harvestDate || 'Harvested recently',
           is_organic: crop.isOrganic ?? true,
         })
         .select()
@@ -217,19 +217,19 @@ export const supabaseService = {
       const { data, error } = await supabase
         .from('orders')
         .insert({
-          produce_id: tx.produceId,
+          produce_id: tx.produceId || 1,
           produce_name: tx.produceName,
           amount: tx.amount,
           quantity_ordered: tx.quantityOrdered,
-          buyer_name: tx.buyerName,
-          farmer_name: tx.farmerName,
-          farmer_phone: tx.farmerPhone,
-          delivery_method: tx.deliveryMethod,
-          delivery_address: tx.deliveryAddress,
-          payment_method: tx.paymentMethod,
-          status: tx.status,
+          buyer_name: tx.buyerName || 'Buyer',
+          farmer_name: tx.farmerName || 'Local Farmer',
+          farmer_phone: tx.farmerPhone || '+94 77 123 4567',
+          delivery_method: tx.deliveryMethod || 'Direct Farm Delivery',
+          delivery_address: tx.deliveryAddress || 'Central Agri Hub #4B',
+          payment_method: tx.paymentMethod || 'AgriPay Escrow',
+          status: tx.status || 'Confirmed',
           tracking_code: tx.trackingCode,
-          handover_pin: tx.handoverPin,
+          handover_pin: tx.handoverPin || '1234',
         })
         .select()
         .single();
@@ -318,30 +318,45 @@ export const supabaseService = {
   async upsertDelivery(delivery: Delivery): Promise<boolean> {
     if (!isSupabaseConfigured()) return false;
     try {
+      let safeDriverId: string | null = null;
+      if (delivery.assignedDriverId) {
+        if (delivery.assignedDriverId.startsWith('drv-')) {
+          safeDriverId = delivery.assignedDriverId;
+        } else if (delivery.assignedDriverId === 'd1') {
+          safeDriverId = 'drv-kasun';
+        } else if (delivery.assignedDriverId === 'd2') {
+          safeDriverId = 'drv-david';
+        } else if (delivery.assignedDriverId === 'd3') {
+          safeDriverId = 'drv-nuwan';
+        }
+      }
+
       const { error } = await supabase.from('deliveries').upsert({
         id: delivery.id,
         order_id: delivery.orderId,
         tracking_code: delivery.trackingCode,
-        handover_pin: delivery.handoverPin,
-        farmer_id: delivery.farmerId,
-        farmer_name: delivery.farmerName,
-        farmer_phone: delivery.farmerPhone,
-        farmer_avatar: delivery.farmerAvatar,
-        buyer_id: delivery.buyerId,
-        buyer_name: delivery.buyerName,
-        buyer_phone: delivery.buyerPhone,
-        buyer_avatar: delivery.buyerAvatar,
+        handover_pin: delivery.handoverPin || '1234',
+        farmer_id: delivery.farmerId || 'usr-farmer',
+        farmer_name: delivery.farmerName || 'Local Farmer',
+        farmer_phone: delivery.farmerPhone || '+94 77 123 4567',
+        farmer_avatar: delivery.farmerAvatar || null,
+        buyer_id: delivery.buyerId || 'usr-buyer',
+        buyer_name: delivery.buyerName || 'Buyer',
+        buyer_phone: delivery.buyerPhone || '+94 71 888 9999',
+        buyer_avatar: delivery.buyerAvatar || null,
         pickup: delivery.pickup,
         dropoff: delivery.dropoff,
         goods: delivery.goods,
-        vehicle_required: delivery.vehicleRequired,
+        vehicle_required: ['Motorbike', 'Three-wheeler', 'Van', 'Small truck', 'Lorry'].includes(delivery.vehicleRequired)
+          ? delivery.vehicleRequired
+          : 'Van',
         distance_km: delivery.distanceKm,
         estimated_minutes: delivery.estimatedMinutes,
         customer_delivery_fee: delivery.customerDeliveryFee,
         driver_earnings: delivery.driverEarnings,
         platform_fee: delivery.platformFee,
         status: delivery.status,
-        assigned_driver_id: delivery.assignedDriverId || null,
+        assigned_driver_id: safeDriverId,
         requested_at: new Date(delivery.requestedAt).toISOString(),
         accepted_at: delivery.acceptedAt ? new Date(delivery.acceptedAt).toISOString() : null,
         pickup_at: delivery.pickupArrivedAt ? new Date(delivery.pickupArrivedAt).toISOString() : null,
@@ -1324,5 +1339,201 @@ export const supabaseService = {
     );
 
     return counts;
+  },
+
+  // ── Admin Cloud Profile Management ──────────────────────────────────────
+  async fetchProfiles(): Promise<SystemUser[] | null> {
+    if (!isSupabaseConfigured()) return null;
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('Supabase fetchProfiles error:', error.message);
+        return null;
+      }
+
+      return (data || []).map((row: any) => ({
+        id: row.id,
+        name: row.name || 'User',
+        email: row.email,
+        role: (row.role === 'DRIVER' ? 'COURIER' : row.role) as UserRole,
+        status: (row.status === 'suspended' ? 'banned' : row.status || 'active') as any,
+        isVerified: Boolean(row.is_verified),
+        phone: row.phone || '',
+        joinedDate: row.created_at
+          ? new Date(row.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+          : 'Oct 2026',
+        lastLogin: 'Active recently',
+        walletBalance: Number(row.wallet_balance || 0),
+        avatarUrl: row.avatar_url || '',
+      }));
+    } catch (err) {
+      console.warn('Supabase fetchProfiles failed:', err);
+      return null;
+    }
+  },
+
+  async updateProfileAdmin(
+    id: string,
+    updates: { is_verified?: boolean; status?: string; role?: string; name?: string; phone?: string }
+  ): Promise<boolean> {
+    if (!isSupabaseConfigured()) return false;
+    try {
+      const sanitizedUpdates: any = { ...updates };
+      if (updates.status) {
+        sanitizedUpdates.status =
+          updates.status === 'banned' || updates.status === 'suspended'
+            ? 'banned'
+            : updates.status === 'pending'
+            ? 'pending'
+            : 'active';
+      }
+
+      const { error } = await supabase.from('profiles').update(sanitizedUpdates).eq('id', id);
+      if (error) {
+        console.warn('Supabase updateProfileAdmin error:', error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.warn('Supabase updateProfileAdmin failed:', err);
+      return false;
+    }
+  },
+
+  async deleteProfileAdmin(id: string): Promise<boolean> {
+    if (!isSupabaseConfigured()) return false;
+    try {
+      const { error } = await supabase.from('profiles').delete().eq('id', id);
+      if (error) {
+        console.warn('Supabase deleteProfileAdmin error:', error.message);
+        // Fallback: suspend status
+        await supabase.from('profiles').update({ status: 'suspended' }).eq('id', id);
+      }
+      return true;
+    } catch (err) {
+      console.warn('Supabase deleteProfileAdmin failed:', err);
+      return false;
+    }
+  },
+
+  // ── Cloud Messages & Chat Integration ────────────────────────────────────
+  async fetchMessages(conversationId: string): Promise<any[] | null> {
+    if (!isSupabaseConfigured()) return null;
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.warn('Supabase fetchMessages error:', error.message);
+        return null;
+      }
+      return data || [];
+    } catch (err) {
+      console.warn('Supabase fetchMessages failed:', err);
+      return null;
+    }
+  },
+
+  async insertMessage(msg: {
+    conversation_id: string;
+    farmer_name: string;
+    buyer_name: string;
+    produce_name: string;
+    sender: 'Buyer' | 'Farmer';
+    content: string;
+    price_offer?: any;
+  }): Promise<any | null> {
+    if (!isSupabaseConfigured()) return null;
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: msg.conversation_id,
+          farmer_name: msg.farmer_name,
+          buyer_name: msg.buyer_name,
+          produce_name: msg.produce_name,
+          sender: msg.sender,
+          content: msg.content,
+          price_offer: msg.price_offer ? JSON.stringify(msg.price_offer) : null,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.warn('Supabase insertMessage error:', error.message);
+        return null;
+      }
+      return data;
+    } catch (err) {
+      console.warn('Supabase insertMessage failed:', err);
+      return null;
+    }
+  },
+
+  subscribeToMessages(conversationId: string, onUpdate: (payload: any) => void) {
+    if (!isSupabaseConfigured()) return () => {};
+    const channel = supabase
+      .channel(`realtime:messages:${conversationId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+        payload => {
+          onUpdate(payload);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
+
+  subscribeToProduce(onUpdate: (payload: any) => void) {
+    if (!isSupabaseConfigured()) return () => {};
+    const channel = supabase
+      .channel('realtime:produce')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'produce' }, payload => {
+        onUpdate(payload);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
+
+  subscribeToOrders(onUpdate: (payload: any) => void) {
+    if (!isSupabaseConfigured()) return () => {};
+    const channel = supabase
+      .channel('realtime:orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, payload => {
+        onUpdate(payload);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
+
+  subscribeToProfiles(onUpdate: (payload: any) => void) {
+    if (!isSupabaseConfigured()) return () => {};
+    const channel = supabase
+      .channel('realtime:profiles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, payload => {
+        onUpdate(payload);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   },
 };

@@ -1,4 +1,5 @@
 import { Message, PriceOffer, ConversationThread, Produce } from '../types';
+import { supabaseService } from './supabaseService';
 
 type MessageListener = (messages: Message[]) => void;
 type ThreadListener = (threads: ConversationThread[]) => void;
@@ -107,8 +108,67 @@ class RealtimeChatService {
     const current = (this.messagesByConversation.get(conversationId) || []).slice().sort((a, b) => a.timestamp - b.timestamp);
     listener([...current]);
 
+    // Cloud Sync: Fetch messages from Supabase and subscribe to live changes
+    let unsubscribeCloud: (() => void) | null = null;
+    if (supabaseService.isConfigured()) {
+      supabaseService.fetchMessages(conversationId).then(remoteMsgs => {
+        if (remoteMsgs && remoteMsgs.length > 0) {
+          const formatted: Message[] = remoteMsgs.map(r => ({
+            id: Number(r.id),
+            conversationId: r.conversation_id,
+            farmerName: r.farmer_name,
+            buyerName: r.buyer_name,
+            produceName: r.produce_name,
+            produceId: 0,
+            sender: r.sender,
+            content: r.content,
+            timestamp: new Date(r.created_at).getTime(),
+            offer: r.price_offer ? (typeof r.price_offer === 'string' ? JSON.parse(r.price_offer) : r.price_offer) : undefined,
+            status: r.is_read ? 'read' : 'delivered',
+          }));
+
+          const localList = this.messagesByConversation.get(conversationId) || [];
+          const existingIds = new Set(localList.map(m => m.id));
+          const toAdd = formatted.filter(m => !existingIds.has(m.id));
+          if (toAdd.length > 0) {
+            const merged = [...localList, ...toAdd].sort((a, b) => a.timestamp - b.timestamp);
+            this.messagesByConversation.set(conversationId, merged);
+            listener([...merged]);
+            this.notifyThreads();
+          }
+        }
+      }).catch(err => console.warn('Supabase fetchMessages error:', err));
+
+      unsubscribeCloud = supabaseService.subscribeToMessages(conversationId, payload => {
+        if (payload?.new) {
+          const r = payload.new;
+          const msg: Message = {
+            id: Number(r.id),
+            conversationId: r.conversation_id,
+            farmerName: r.farmer_name,
+            buyerName: r.buyer_name,
+            produceName: r.produce_name,
+            produceId: 0,
+            sender: r.sender,
+            content: r.content,
+            timestamp: new Date(r.created_at).getTime(),
+            offer: r.price_offer ? (typeof r.price_offer === 'string' ? JSON.parse(r.price_offer) : r.price_offer) : undefined,
+            status: 'delivered',
+          };
+          const list = this.messagesByConversation.get(conversationId) || [];
+          if (!list.some(m => m.id === msg.id)) {
+            list.push(msg);
+            this.messagesByConversation.set(conversationId, list);
+            this.notifyConversation(conversationId);
+            this.notifyThreads();
+          }
+        }
+      });
+    }
+
     return () => {
       this.messageListeners.get(conversationId)?.delete(listener);
+      if (unsubscribeCloud) unsubscribeCloud();
     };
   }
 
@@ -183,6 +243,25 @@ class RealtimeChatService {
     // Notify channel listeners
     this.notifyConversation(conversationId);
     this.notifyThreads();
+
+    // Sync to Supabase cloud messages
+    if (supabaseService.isConfigured()) {
+      supabaseService.insertMessage({
+        conversation_id: conversationId,
+        farmer_name: farmerName,
+        buyer_name: buyerName,
+        produce_name: produceName,
+        sender,
+        content,
+        price_offer: offer,
+      }).then(cloudMsg => {
+        if (cloudMsg?.id) {
+          newMsg.id = Number(cloudMsg.id);
+        }
+      }).catch(err => {
+        console.warn('Supabase insertMessage error:', err);
+      });
+    }
 
     // Mark as delivered
     setTimeout(() => {

@@ -121,6 +121,9 @@ interface AppContextType {
   updateSystemUser: (userId: string, updates: Partial<import('../types').SystemUser>) => void;
   toggleBanUser: (userId: string) => void;
   toggleVerifyUser: (userId: string) => void;
+  warnUser: (userId: string, reason?: string) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
+  refreshSystemUsers: () => Promise<void>;
   // Admin Management: Crop Types
   cropTypes: { id: string; name: string; category: ProduceCategory; basePriceKg: number; season: string; icon: string }[];
   addCropType: (newCrop: { name: string; category: ProduceCategory; basePriceKg: number; season: string }) => void;
@@ -153,7 +156,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [userProfile, setUserProfile] = useState<UserProfile>(INITIAL_USER_PROFILE);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [communityPools, setCommunityPools] = useState<CommunityPool[]>(INITIAL_COMMUNITY_POOLS);
-  const [themeMode, setThemeMode] = useState<'dark' | 'light'>('dark');
+  const [themeMode, setThemeMode] = useState<'dark' | 'light'>('light');
   const [navTransitionDirection, setNavTransitionDirection] = useState<'slide_from_right' | 'slide_from_left'>('slide_from_right');
   const [currentBottomTab, setCurrentBottomTab] = useState<'home' | 'services' | 'activity' | 'account'>('home');
   const [systemUsers, setSystemUsers] = useState<import('../types').SystemUser[]>(INITIAL_SYSTEM_USERS);
@@ -180,13 +183,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return deliveries.find(d => d.orderId === txId);
   };
 
-
   const unreadMessageCount = conversationThreads.reduce((sum, t) => sum + t.unreadCount, 0);
+
+  const refreshSystemUsers = async () => {
+    if (supabaseService.isConfigured()) {
+      const remoteUsers = await supabaseService.fetchProfiles();
+      if (remoteUsers && remoteUsers.length > 0) {
+        setSystemUsers(remoteUsers);
+      }
+    }
+  };
 
   const updateSystemUser = (userId: string, updates: Partial<import('../types').SystemUser>) => {
     setSystemUsers(prev =>
       prev.map(u => (u.id === userId ? { ...u, ...updates } : u))
     );
+    if (supabaseService.isConfigured()) {
+      supabaseService.updateProfileAdmin(userId, {
+        name: updates.name,
+        phone: updates.phone,
+        role: updates.role === 'COURIER' ? 'DRIVER' : updates.role,
+        status: updates.status,
+        is_verified: updates.isVerified,
+      }).catch(err => console.warn('Supabase updateProfileAdmin error:', err));
+    }
     showToast('User updated successfully', 'success');
   };
 
@@ -195,6 +215,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map(u => {
         if (u.id === userId) {
           const newStatus = u.status === 'banned' ? 'active' : 'banned';
+          if (supabaseService.isConfigured()) {
+            supabaseService.updateProfileAdmin(userId, {
+              status: newStatus === 'banned' ? 'suspended' : 'active',
+            }).catch(e => console.warn('Supabase ban update error:', e));
+          }
           showToast(newStatus === 'banned' ? `Banned user ${u.name}` : `Restored user ${u.name}`, newStatus === 'banned' ? 'warn' : 'success');
           return { ...u, status: newStatus };
         }
@@ -208,12 +233,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       prev.map(u => {
         if (u.id === userId) {
           const nextVerified = !u.isVerified;
+          if (supabaseService.isConfigured()) {
+            supabaseService.updateProfileAdmin(userId, {
+              is_verified: nextVerified,
+            }).catch(e => console.warn('Supabase verify update error:', e));
+          }
           showToast(nextVerified ? `Verified ${u.name}` : `Revoked verification for ${u.name}`, 'info');
           return { ...u, isVerified: nextVerified };
         }
         return u;
       })
     );
+  };
+
+  const warnUser = async (userId: string, reason?: string) => {
+    setSystemUsers(prev =>
+      prev.map(u => {
+        if (u.id === userId) {
+          return { ...u, status: 'warned' };
+        }
+        return u;
+      })
+    );
+    if (supabaseService.isConfigured()) {
+      await supabaseService.updateProfileAdmin(userId, { status: 'warned' });
+    }
+    showToast(`Official warning issued to user${reason ? `: ${reason}` : ''}`, 'warn');
+  };
+
+  const deleteUser = async (userId: string) => {
+    setSystemUsers(prev => prev.filter(u => u.id !== userId));
+    if (supabaseService.isConfigured()) {
+      await supabaseService.deleteProfileAdmin(userId);
+    }
+    showToast('User account removed from database', 'info');
   };
 
   const addCropType = (newCrop: { name: string; category: ProduceCategory; basePriceKg: number; season: string }) => {
@@ -235,7 +288,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleThemeMode = () => {
-    setThemeMode(prev => (prev === 'dark' ? 'light' : 'dark'));
+    setThemeMode(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      AsyncStorage.setItem('@agriconnect_theme_mode', next).catch(() => {});
+      return next;
+    });
   };
 
   const topUpWallet = (amount: number) => {
@@ -353,12 +410,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        // Cloud Sync: Fetch live Produce and Orders from Supabase if configured
+        // Restore theme preference (Default to clean white/light theme)
+        try {
+          const savedTheme = await AsyncStorage.getItem('@agriconnect_theme_mode');
+          if (savedTheme === 'light' || savedTheme === 'dark') {
+            setThemeMode(savedTheme);
+          } else {
+            setThemeMode('light');
+          }
+        } catch {}
+
+        // Cloud Sync: Fetch live Produce, Orders, and Profiles from Supabase if configured
         if (supabaseService.isConfigured()) {
           try {
-            const [remoteProduce, remoteOrders] = await Promise.all([
+            const [remoteProduce, remoteOrders, remoteProfiles] = await Promise.all([
               supabaseService.fetchProduce(),
               supabaseService.fetchOrders(),
+              supabaseService.fetchProfiles(),
             ]);
             if (remoteProduce && remoteProduce.length > 0) {
               setProduceList(remoteProduce);
@@ -367,6 +435,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (remoteOrders && remoteOrders.length > 0) {
               setTransactions(remoteOrders);
               persistData(STORAGE_KEYS.TRANSACTIONS, remoteOrders);
+            }
+            if (remoteProfiles && remoteProfiles.length > 0) {
+              setSystemUsers(remoteProfiles);
             }
           } catch (e) {
             console.warn('Supabase initial fetch failed, using local storage cache:', e);
@@ -377,6 +448,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     };
     loadStoredData();
+  }, []);
+
+  // Real-time Supabase listeners for Produce, Orders, and Profiles
+  useEffect(() => {
+    if (!supabaseService.isConfigured()) return;
+
+    const unsubProduce = supabaseService.subscribeToProduce(async () => {
+      const fresh = await supabaseService.fetchProduce();
+      if (fresh && fresh.length > 0) {
+        setProduceList(fresh);
+        persistData(STORAGE_KEYS.PRODUCE, fresh);
+      }
+    });
+
+    const unsubOrders = supabaseService.subscribeToOrders(async () => {
+      const fresh = await supabaseService.fetchOrders();
+      if (fresh && fresh.length > 0) {
+        setTransactions(fresh);
+        persistData(STORAGE_KEYS.TRANSACTIONS, fresh);
+      }
+    });
+
+    const unsubProfiles = supabaseService.subscribeToProfiles(async () => {
+      const fresh = await supabaseService.fetchProfiles();
+      if (fresh && fresh.length > 0) {
+        setSystemUsers(fresh);
+      }
+    });
+
+    return () => {
+      unsubProduce();
+      unsubOrders();
+      unsubProfiles();
+    };
   }, []);
 
   // ── Root Deep Link & OAuth Listener ─────────────────────────────────────
@@ -527,17 +632,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         DEFAULT_CATEGORY_IMAGES.Vegetables,
       middlemanPrice: cropData.middlemanPrice || cropData.price * 1.55,
       harvestDate: cropData.harvestDate || 'Harvested today',
-      farmerName: cropData.farmerName || 'Mateo Gutierrez',
-      farmerPhone: cropData.farmerPhone || '+1 (555) 234-7890',
-      location: cropData.location || 'Green Valley, Block 4',
+      farmerName: cropData.farmerName || userProfile.name || 'Local Farmer',
+      farmerPhone: cropData.farmerPhone || userProfile.phone || '+94 77 123 4567',
+      location: cropData.location || userProfile.defaultAddress || 'Negombo Agricultural Centre, Western Province',
     };
     const updated = [newProduce, ...produceList];
     setProduceList(updated);
     await persistData(STORAGE_KEYS.PRODUCE, updated);
 
-    // Sync with Supabase cloud if configured
+    // Sync full produce listing with Supabase cloud
     if (supabaseService.isConfigured()) {
-      supabaseService.insertProduce(cropData).catch(err => {
+      supabaseService.insertProduce(newProduce).then(inserted => {
+        if (inserted?.id) {
+          setProduceList(prev => prev.map(p => (p.id === nextId ? { ...p, id: inserted.id } : p)));
+        }
+      }).catch(err => {
         console.warn('Supabase insertProduce error:', err);
       });
     }
@@ -1065,6 +1174,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateSystemUser,
         toggleBanUser,
         toggleVerifyUser,
+        warnUser,
+        deleteUser,
+        refreshSystemUsers,
         cropTypes,
         addCropType,
         deleteCropType,

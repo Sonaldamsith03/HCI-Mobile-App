@@ -1,3 +1,4 @@
+import { chatService } from "../services/chatService";
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
@@ -348,10 +349,13 @@ export const BuyerDashboard: React.FC<{ hideBottomNav?: boolean }> = ({ hideBott
           <TouchableOpacity
             style={[styles.quickCartButton, themeMode === 'dark' && styles.quickCartButtonDark]}
             onPress={() => {
+              const firstThread = chatService.getAllThreads()[0];
               navigation.navigate('ChatConversation', {
-                farmerName: 'Mateo Gutierrez',
-                produceName: 'Organic Roma Tomatoes',
-                produceId: 1,
+                farmerName: firstThread?.farmerName || produceList[0]?.farmerName || 'Local Farmer',
+                produceName: firstThread?.produceName || produceList[0]?.name || 'Fresh Produce',
+                produceId: firstThread?.produceId || produceList[0]?.id || 1,
+                buyerName: userProfile.name || 'Buyer',
+                conversationId: firstThread?.id,
               });
             }}
             activeOpacity={0.8}
@@ -764,6 +768,35 @@ export const BuyerDashboard: React.FC<{ hideBottomNav?: boolean }> = ({ hideBott
                                 >
                                   <Ionicons name="flash" size={13} color="#FFFFFF" />
                                   <Text style={styles.cleanQuickOrderText}>Order</Text>
+                                </TouchableOpacity>
+
+                                {/* Direct Chat with Farmer Button */}
+                                <TouchableOpacity
+                                  style={[
+                                    {
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      backgroundColor: isDark ? 'rgba(6, 193, 103, 0.15)' : '#E8F5E9',
+                                      borderWidth: 1,
+                                      borderColor: isDark ? 'rgba(6, 193, 103, 0.3)' : '#C8E6C9',
+                                      paddingHorizontal: 8,
+                                      paddingVertical: 6,
+                                      borderRadius: 18,
+                                      gap: 3,
+                                    },
+                                  ]}
+                                  onPress={() => {
+                                    navigation.navigate('ChatConversation', {
+                                      farmerName: item.farmerName,
+                                                                            produceName: item.name,
+                                      produceId: item.id,
+                                      buyerName: userProfile.name || 'Buyer',
+                                    });
+                                  }}
+                                  activeOpacity={0.85}
+                                >
+                                  <Ionicons name="chatbubble-ellipses" size={13} color="#06C167" />
+                                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#06C167' }}>Chat</Text>
                                 </TouchableOpacity>
                               </>
                             )}

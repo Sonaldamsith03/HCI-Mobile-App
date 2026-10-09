@@ -194,6 +194,8 @@ export const BookingCheckoutModal: React.FC<BookingModalProps> = ({
 interface CropModalProps {
   visible: boolean;
   produceToEdit?: Produce | null;
+  farmerName?: string;
+  farmerPhone?: string;
   onClose: () => void;
   onSave: (data: Omit<Produce, 'id'>) => void;
 }
@@ -201,6 +203,8 @@ interface CropModalProps {
 export const CropFormModal: React.FC<CropModalProps> = ({
   visible,
   produceToEdit,
+  farmerName,
+  farmerPhone,
   onClose,
   onSave,
 }) => {
@@ -229,8 +233,8 @@ export const CropFormModal: React.FC<CropModalProps> = ({
       quantity: quantity.trim(),
       category,
       location: location.trim(),
-      farmerName: 'Mateo Gutierrez',
-      farmerPhone: '+1 (555) 234-7890',
+      farmerName: farmerName || produceToEdit?.farmerName || 'Local Farmer',
+      farmerPhone: farmerPhone || produceToEdit?.farmerPhone || '+94 77 123 4567',
       harvestDate: 'Harvested today',
       imageUrl: imageUrl.trim() || DEFAULT_CATEGORY_IMAGES[category],
       middlemanPrice: parseFloat((numPrice * 1.55).toFixed(2)),
@@ -290,6 +294,16 @@ export const CropFormModal: React.FC<CropModalProps> = ({
                 <Text style={styles.photoPreviewBadgeText}>Preview</Text>
               </View>
             </View>
+
+            <Text style={styles.sectionLabel}>Custom Crop Image URL (Optional)</Text>
+            <TextInput
+              style={styles.input}
+              value={imageUrl}
+              onChangeText={setImageUrl}
+              placeholder="Paste direct photo link (https://...)"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
 
             <Text style={styles.sectionLabel}>Produce Name</Text>
             <TextInput

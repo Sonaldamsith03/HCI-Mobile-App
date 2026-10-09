@@ -30,7 +30,7 @@ import { colors } from '../../theme/colors';
 export const DriverTripDetailScreen: React.FC = () => {
   const route = useRoute<RouteProp<RootStackParamList, 'DriverTripDetail'>>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { themeMode, showToast, releaseEscrow } = useApp();
+  const { themeMode, toggleThemeMode, showToast, releaseEscrow } = useApp();
   const isDark = themeMode === 'dark';
 
   const deliveryId = route.params.deliveryId;
@@ -165,10 +165,24 @@ export const DriverTripDetailScreen: React.FC = () => {
           <Text style={[styles.backTitle, isDark && styles.textWhite]}>Trip #{delivery.id}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => setLiveMapVisible(true)} style={styles.mapHeaderBtn}>
-          <Ionicons name="map-outline" size={18} color="#06C167" />
-          <Text style={styles.mapHeaderText}>Live Map</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity onPress={() => setLiveMapVisible(true)} style={styles.mapHeaderBtn}>
+            <Ionicons name="map-outline" size={18} color="#06C167" />
+            <Text style={styles.mapHeaderText}>Live Map</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={toggleThemeMode}
+            style={[styles.mapHeaderBtn, { paddingHorizontal: 10 }]}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={isDark ? 'sunny' : 'moon'}
+              size={18}
+              color={isDark ? '#F59E0B' : '#4B5563'}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -280,6 +294,20 @@ export const DriverTripDetailScreen: React.FC = () => {
 
             <View style={styles.contactBtnGroup}>
               <TouchableOpacity
+                style={[styles.callIconBtn, { backgroundColor: '#2563EB' }]}
+                onPress={() => {
+                  navigation.navigate('ChatConversation', {
+                    farmerName: delivery.farmerName,
+                    buyerName: delivery.assignedDriver?.name || 'Logistics Driver',
+                    produceName: `Trip #${delivery.trackingCode} - ${delivery.goods.name}`,
+                    conversationId: `Driver_${delivery.assignedDriver?.id || 'd1'}_Farmer_${delivery.farmerName}_${delivery.id}`,
+                  });
+                }}
+              >
+                <Ionicons name="chatbubble-ellipses" size={17} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={styles.callIconBtn}
                 onPress={() => handleCall(delivery.farmerPhone)}
               >
@@ -313,6 +341,20 @@ export const DriverTripDetailScreen: React.FC = () => {
             </View>
 
             <View style={styles.contactBtnGroup}>
+              <TouchableOpacity
+                style={[styles.callIconBtn, { backgroundColor: '#2563EB' }]}
+                onPress={() => {
+                  navigation.navigate('ChatConversation', {
+                    farmerName: delivery.assignedDriver?.name || 'Driver Courier',
+                    buyerName: delivery.buyerName,
+                    produceName: `Trip #${delivery.trackingCode} - ${delivery.goods.name}`,
+                    conversationId: `Driver_${delivery.assignedDriver?.id || 'd1'}_${delivery.buyerName}_${delivery.id}`,
+                  });
+                }}
+              >
+                <Ionicons name="chatbubble-ellipses" size={17} color="#FFFFFF" />
+              </TouchableOpacity>
+
               <TouchableOpacity
                 style={styles.callIconBtn}
                 onPress={() => handleCall(delivery.buyerPhone)}

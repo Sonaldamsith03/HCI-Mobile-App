@@ -20,6 +20,7 @@ import { RootStackParamList, Message, PriceOffer, Produce } from '../types';
 import { useApp } from '../context/AppContext';
 import { chatService } from '../services/chatService';
 import { DEFAULT_CATEGORY_IMAGES } from '../data/seedData';
+import { BookingCheckoutModal } from '../components/Modals';
 
 type ChatScreenRouteProp = RouteProp<RootStackParamList, 'ChatConversation'>;
 type ChatScreenNavProp = NativeStackNavigationProp<RootStackParamList>;
@@ -37,6 +38,7 @@ export const ChatConversationScreen: React.FC = () => {
     showToast,
     addToCart,
     respondToOffer,
+    bookProduce,
   } = useApp();
 
   const isDark = themeMode === 'dark';
@@ -63,6 +65,32 @@ export const ChatConversationScreen: React.FC = () => {
   const [proposedQty, setProposedQty] = useState<number>(10);
   const [offerNote, setOfferNote] = useState('');
   const [counterInput, setCounterInput] = useState<{ [id: number]: string }>({});
+  const [showOrderModal, setShowOrderModal] = useState(false);
+
+  const handleFinalizeOrder = async (
+    prod: Produce,
+    quantity: number,
+    deliveryMethod: string,
+    deliveryAddress: string,
+    paymentMethod: string
+  ) => {
+    try {
+      const tx = await bookProduce(prod, quantity, deliveryMethod, deliveryAddress, paymentMethod);
+      chatService.sendMessage(
+        conversationId,
+        farmerName,
+        buyerName,
+        prod.name,
+        `🎉 ORDER FINALIZED & ESCROW SECURED!\n• Amount: $${tx.amount.toFixed(2)} (${quantity} ${prod.unit})\n• Method: ${deliveryMethod}\n• Tracking: ${tx.trackingCode} (PIN: ${tx.handoverPin})\nDelivery request dispatched to logistics fleet!`,
+        currentSenderRole,
+        prod.id
+      );
+      showToast(`Order #${tx.trackingCode} placed with Escrow!`, 'success');
+      setShowOrderModal(false);
+    } catch (e: any) {
+      showToast(e?.message || 'Failed to finalize order', 'warn');
+    }
+  };
 
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -260,19 +288,33 @@ export const ChatConversationScreen: React.FC = () => {
           </Text>
         </View>
 
-        <TouchableOpacity
-          onPress={() => setShowOfferModal(!showOfferModal)}
-          style={[styles.bargainPillBtn, showOfferModal && styles.bargainPillActive]}
-        >
-          <MaterialCommunityIcons
-            name="handshake-outline"
-            size={16}
-            color={showOfferModal ? '#FFFFFF' : '#047857'}
-          />
-          <Text style={[styles.bargainPillText, showOfferModal && { color: '#FFFFFF' }]}>
-            Offer
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.headerActionBtns}>
+          {matchedProduce && currentRole === 'BUYER' && (
+            <TouchableOpacity
+              onPress={() => setShowOrderModal(true)}
+              style={styles.finalizePillBtn}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="cart" size={13} color="#FFFFFF" />
+              <Text style={styles.finalizePillText}>Order</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            onPress={() => setShowOfferModal(!showOfferModal)}
+            style={[styles.bargainPillBtn, showOfferModal && styles.bargainPillActive]}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons
+              name="handshake-outline"
+              size={15}
+              color={showOfferModal ? '#FFFFFF' : '#047857'}
+            />
+            <Text style={[styles.bargainPillText, showOfferModal && { color: '#FFFFFF' }]}>
+              Offer
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Offer Modal / Top Drawer */}
@@ -535,6 +577,13 @@ export const ChatConversationScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <BookingCheckoutModal
+        visible={showOrderModal}
+        produce={matchedProduce || null}
+        onClose={() => setShowOrderModal(false)}
+        onConfirm={handleFinalizeOrder}
+      />
     </SafeAreaView>
   );
 };
@@ -612,6 +661,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6B7280',
     marginTop: 1,
+  },
+  headerActionBtns: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  finalizePillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#06C167',
+    gap: 4,
+  },
+  finalizePillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   bargainPillBtn: {
     flexDirection: 'row',

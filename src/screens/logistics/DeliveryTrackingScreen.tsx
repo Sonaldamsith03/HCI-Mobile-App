@@ -24,7 +24,7 @@ import { colors } from '../../theme/colors';
 export const DeliveryTrackingScreen: React.FC = () => {
   const route = useRoute<RouteProp<RootStackParamList, 'DeliveryTracking'>>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { themeMode } = useApp();
+  const { themeMode, toggleThemeMode, userProfile } = useApp();
   const isDark = themeMode === 'dark';
 
   const { deliveryId, userRole = 'BUYER' } = route.params;
@@ -75,10 +75,24 @@ export const DeliveryTrackingScreen: React.FC = () => {
           <Text style={[styles.topTitle, isDark && styles.textWhite]}>Delivery Tracking</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => setLiveMapVisible(true)} style={styles.liveMapPill}>
-          <Ionicons name="map-outline" size={16} color="#06C167" />
-          <Text style={styles.liveMapText}>Open GPS Map</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity onPress={() => setLiveMapVisible(true)} style={styles.liveMapPill}>
+            <Ionicons name="map-outline" size={16} color="#06C167" />
+            <Text style={styles.liveMapText}>GPS Map</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={toggleThemeMode}
+            style={[styles.themeBtn, isDark && styles.themeBtnDark]}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={isDark ? 'sunny' : 'moon'}
+              size={16}
+              color={isDark ? '#F59E0B' : '#4B5563'}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -129,9 +143,26 @@ export const DeliveryTrackingScreen: React.FC = () => {
                 </View>
               </View>
 
-              <TouchableOpacity style={styles.callDriverBtn} onPress={handleCallDriver} activeOpacity={0.8}>
-                <Ionicons name="call" size={18} color="#FFFFFF" />
-              </TouchableOpacity>
+              <View style={styles.driverActionsGroup}>
+                <TouchableOpacity
+                  style={styles.chatDriverBtn}
+                  onPress={() => {
+                    navigation.navigate('ChatConversation', {
+                      farmerName: driver.name,
+                      buyerName: delivery.buyerName || userProfile.name || 'Buyer',
+                      produceName: `Delivery #${delivery.trackingCode} - ${delivery.goods.name}`,
+                      conversationId: `Driver_${driver.id}_${delivery.buyerName}_${delivery.id}`,
+                    });
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="chatbubble-ellipses" size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.callDriverBtn} onPress={handleCallDriver} activeOpacity={0.8}>
+                  <Ionicons name="call" size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         ) : (
@@ -432,6 +463,30 @@ const styles = StyleSheet.create({
     backgroundColor: '#06C167',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  driverActionsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  chatDriverBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#2563EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  themeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F3F4F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  themeBtnDark: {
+    backgroundColor: '#1E293B',
   },
   searchingRow: {
     flexDirection: 'row',

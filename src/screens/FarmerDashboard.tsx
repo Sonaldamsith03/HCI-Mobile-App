@@ -94,6 +94,7 @@ export const FarmerDashboard: React.FC = () => {
     messages,
     conversationThreads,
     themeMode,
+    toggleThemeMode,
     addProduce,
     updateProduce,
     deleteProduce,
@@ -127,7 +128,7 @@ export const FarmerDashboard: React.FC = () => {
 
   const handleSendFarmerReply = () => {
     if (!replyText.trim()) return;
-    sendMessage('Mateo Gutierrez', 'General Farm Chat', replyText.trim(), 'Farmer');
+    sendMessage(userProfile.name || 'Local Farmer', 'General Farm Chat', replyText.trim(), 'Farmer');
     setReplyText('');
   };
 
@@ -149,9 +150,31 @@ export const FarmerDashboard: React.FC = () => {
           <Text style={[styles.backLabel, isDark && { color: '#FFFFFF' }]}>Portals</Text>
         </TouchableOpacity>
 
-        <View style={[styles.verifiedPill, isDark && { backgroundColor: 'rgba(6, 193, 103, 0.15)', borderColor: 'rgba(6, 193, 103, 0.3)' }]}>
-          <Ionicons name="checkmark-circle" size={14} color="#06C167" />
-          <Text style={[styles.verifiedText, isDark && { color: '#06C167' }]}>Verified Farm</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {/* Quick Theme Mode Toggle Button */}
+          <TouchableOpacity
+            onPress={toggleThemeMode}
+            style={[
+              {
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: isDark ? '#262626' : '#F1F5F9',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
+              },
+            ]}
+            activeOpacity={0.8}
+          >
+            <Ionicons name={isDark ? 'sunny' : 'moon'} size={18} color={isDark ? '#FFB800' : '#1E293B'} />
+          </TouchableOpacity>
+
+          <View style={[styles.verifiedPill, isDark && { backgroundColor: 'rgba(6, 193, 103, 0.15)', borderColor: 'rgba(6, 193, 103, 0.3)' }]}>
+            <Ionicons name="checkmark-circle" size={14} color="#06C167" />
+            <Text style={[styles.verifiedText, isDark && { color: '#06C167' }]}>Verified Farm</Text>
+          </View>
         </View>
       </View>
 
@@ -753,6 +776,8 @@ export const FarmerDashboard: React.FC = () => {
       <CropFormModal
         visible={showCropModal}
         produceToEdit={editingProduce}
+        farmerName={userProfile.name}
+        farmerPhone={userProfile.phone}
         onClose={() => {
           setShowCropModal(false);
           setEditingProduce(null);
@@ -763,8 +788,8 @@ export const FarmerDashboard: React.FC = () => {
           } else {
             addProduce({
               ...data,
-              farmerName: userProfile.name || 'Mateo Gutierrez',
-              farmerPhone: userProfile.phone || '+1 (555) 234-7890',
+              farmerName: userProfile.name || 'Local Farmer',
+              farmerPhone: userProfile.phone || '+94 77 123 4567',
             });
           }
         }}

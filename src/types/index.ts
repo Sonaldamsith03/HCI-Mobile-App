@@ -67,7 +67,7 @@ export interface SystemUser {
   email: string;
   password?: string;
   role: UserRole;
-  status: 'active' | 'banned' | 'pending';
+  status: 'active' | 'banned' | 'pending' | 'warned' | 'suspended';
   isVerified: boolean;
   phone?: string;
   joinedDate: string;

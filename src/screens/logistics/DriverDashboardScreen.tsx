@@ -25,7 +25,7 @@ import { colors } from '../../theme/colors';
 
 export const DriverDashboardScreen: React.FC = () => {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { themeMode, showToast, setCurrentRole } = useApp();
+  const { themeMode, toggleThemeMode, showToast, setCurrentRole } = useApp();
   const isDark = themeMode === 'dark';
 
   const [currentDriver, setCurrentDriver] = useState<Driver | null>(logisticsService.getCurrentDriver());
@@ -127,6 +127,18 @@ export const DriverDashboardScreen: React.FC = () => {
         </View>
 
         <View style={styles.headerRightActions}>
+          <TouchableOpacity
+            style={styles.notifIconBtn}
+            onPress={toggleThemeMode}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={isDark ? 'sunny' : 'moon'}
+              size={19}
+              color={isDark ? '#F59E0B' : '#4B5563'}
+            />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.notifIconBtn}
             onPress={() => navigation.navigate('DriverDashboard', { initialTab: 'notifications' })}

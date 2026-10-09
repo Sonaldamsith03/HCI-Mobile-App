@@ -40,6 +40,9 @@ export const AdminDashboard: React.FC = () => {
     updateSystemUser,
     toggleBanUser,
     toggleVerifyUser,
+    warnUser,
+    deleteUser,
+    refreshSystemUsers,
     cropTypes,
     addCropType,
     deleteCropType,
@@ -450,6 +453,35 @@ export const AdminDashboard: React.FC = () => {
         {/* ============================================================== */}
         {activeTab === 'users' && (
           <View style={styles.sectionWrap}>
+            {/* Header info & Live Sync */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={[styles.sectionHeading, isDark && styles.textWhite]}>
+                Registered Users ({filteredUsers.length})
+              </Text>
+              <TouchableOpacity
+                onPress={async () => {
+                  showToast('Syncing users with Supabase...', 'info');
+                  await refreshSystemUsers();
+                  showToast('Database profiles refreshed!', 'success');
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: isDark ? '#1E293B' : '#E5E7EB',
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 12,
+                  gap: 5,
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="refresh" size={14} color={isDark ? '#FFFFFF' : '#000000'} />
+                <Text style={{ fontSize: 12, fontWeight: '600', color: isDark ? '#FFFFFF' : '#000000' }}>
+                  Sync Cloud
+                </Text>
+              </TouchableOpacity>
+            </View>
+
             {/* Search and Filters */}
             <View style={[styles.searchBox, isDark ? styles.inputDark : styles.inputLight]}>
               <Ionicons name="search-outline" size={18} color="#71717A" />
@@ -503,6 +535,7 @@ export const AdminDashboard: React.FC = () => {
               ) : (
                 filteredUsers.map(u => {
                   const isBanned = u.status === 'banned';
+                  const isWarned = u.status === 'warned';
                   return (
                     <View
                       key={u.id}
@@ -510,6 +543,7 @@ export const AdminDashboard: React.FC = () => {
                         styles.userCard,
                         isDark ? styles.cardDark : styles.cardLight,
                         isBanned && styles.userCardBanned,
+                        isWarned && { borderColor: 'rgba(245, 158, 11, 0.45)', borderWidth: 1.5 },
                       ]}
                     >
                       {/* Top Row: Avatar & Basic Info */}
@@ -531,6 +565,11 @@ export const AdminDashboard: React.FC = () => {
                             <View style={[styles.roleBadge, { backgroundColor: getRoleColor(u.role) }]}>
                               <Text style={styles.roleBadgeText}>{u.role}</Text>
                             </View>
+                            {isWarned && (
+                              <View style={[styles.roleBadge, { backgroundColor: '#F59E0B' }]}>
+                                <Text style={styles.roleBadgeText}>WARNED</Text>
+                              </View>
+                            )}
                             {isBanned && (
                               <View style={styles.bannedBadge}>
                                 <Text style={styles.bannedBadgeText}>BANNED</Text>
@@ -562,15 +601,15 @@ export const AdminDashboard: React.FC = () => {
                       </View>
 
                       {/* Bottom Action Buttons (Uber Minimalist) */}
-                      <View style={styles.userActionsRow}>
+                      <View style={[styles.userActionsRow, { flexWrap: 'wrap', gap: 6 }]}>
                         {/* Edit Credentials */}
                         <TouchableOpacity
                           style={[styles.userActionBtn, isDark ? styles.btnDark : styles.btnLight]}
                           onPress={() => handleOpenEditUser(u)}
                           activeOpacity={0.7}
                         >
-                          <Ionicons name="create-outline" size={14} color={isDark ? '#FFFFFF' : '#000000'} />
-                          <Text style={[styles.userActionText, isDark && styles.textWhite]}>Edit Details</Text>
+                          <Ionicons name="create-outline" size={13} color={isDark ? '#FFFFFF' : '#000000'} />
+                          <Text style={[styles.userActionText, isDark && styles.textWhite]}>Edit</Text>
                         </TouchableOpacity>
 
                         {/* Toggle Verify */}
@@ -581,7 +620,7 @@ export const AdminDashboard: React.FC = () => {
                         >
                           <Ionicons
                             name={u.isVerified ? 'close-circle-outline' : 'shield-checkmark-outline'}
-                            size={14}
+                            size={13}
                             color={u.isVerified ? '#F59E0B' : '#06C167'}
                           />
                           <Text
@@ -590,7 +629,35 @@ export const AdminDashboard: React.FC = () => {
                               { color: u.isVerified ? '#F59E0B' : '#06C167' },
                             ]}
                           >
-                            {u.isVerified ? 'Unverify' : 'Verify User'}
+                            {u.isVerified ? 'Unverify' : 'Verify'}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {/* Warn User Button */}
+                        <TouchableOpacity
+                          style={[
+                            styles.userActionBtn,
+                            { borderColor: 'rgba(245, 158, 11, 0.4)', backgroundColor: 'rgba(245, 158, 11, 0.08)' },
+                          ]}
+                          onPress={() => {
+                            Alert.alert(
+                              'Issue Warning',
+                              `Send official warning to ${u.name}? Account status will be updated to Warned.`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Warn User',
+                                  style: 'default',
+                                  onPress: () => warnUser(u.id),
+                                },
+                              ]
+                            );
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="warning-outline" size={13} color="#F59E0B" />
+                          <Text style={[styles.userActionText, { color: '#F59E0B' }]}>
+                            {isWarned ? 'Warned' : 'Warn'}
                           </Text>
                         </TouchableOpacity>
 
@@ -605,12 +672,38 @@ export const AdminDashboard: React.FC = () => {
                         >
                           <Ionicons
                             name={isBanned ? 'checkmark-circle-outline' : 'ban-outline'}
-                            size={14}
+                            size={13}
                             color={isBanned ? '#06C167' : '#EF4444'}
                           />
                           <Text style={[styles.userActionText, { color: isBanned ? '#06C167' : '#EF4444' }]}>
                             {isBanned ? 'Restore' : 'Ban'}
                           </Text>
+                        </TouchableOpacity>
+
+                        {/* Delete User Button */}
+                        <TouchableOpacity
+                          style={[
+                            styles.userActionBtn,
+                            { borderColor: 'rgba(239, 68, 68, 0.4)', backgroundColor: 'rgba(239, 68, 68, 0.08)' },
+                          ]}
+                          onPress={() => {
+                            Alert.alert(
+                              'Delete User Account',
+                              `Permanently delete ${u.name} (${u.email}) from database? This cannot be undone.`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Delete',
+                                  style: 'destructive',
+                                  onPress: () => deleteUser(u.id),
+                                },
+                              ]
+                            );
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="trash-outline" size={13} color="#EF4444" />
+                          <Text style={[styles.userActionText, { color: '#EF4444' }]}>Delete</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
