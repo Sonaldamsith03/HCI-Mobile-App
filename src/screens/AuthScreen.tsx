@@ -405,7 +405,7 @@ export const AuthScreen: React.FC = () => {
             : 'BUYER';
 
         // 1. Live Supabase Auth sign up
-        const { profile, error } = await supabaseService.signUp(cleanEmail, password, {
+        const { profile, error, notice } = await supabaseService.signUp(cleanEmail, password, {
           name: fullName.trim(),
           role: cloudRole,
           phone: phone.trim() || undefined,
@@ -429,6 +429,10 @@ export const AuthScreen: React.FC = () => {
             Alert.alert('Sign Up Notice', error);
           }
           return;
+        }
+
+        if (notice) {
+          showToast(notice, 'info');
         }
 
         // 2. If Driver, register vehicle in logistics tables

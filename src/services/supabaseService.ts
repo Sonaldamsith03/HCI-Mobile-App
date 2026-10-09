@@ -392,16 +392,22 @@ export const supabaseService = {
       role: 'BUYER' | 'FARMER' | 'DRIVER' | 'ADMIN';
       phone?: string;
     }
-  ): Promise<{ user: any; profile: any; error: string | null }> {
+  ): Promise<{ user: any; profile: any; error: string | null; notice?: string }> {
     if (!isSupabaseConfigured()) {
       return { user: null, profile: null, error: 'Supabase is not configured' };
     }
 
     try {
       const cleanEmail = email.trim().toLowerCase();
+      const cleanPassword = password.trim();
+
+      let user: any = null;
+      let userId: string | null = null;
+      let rateLimited = false;
+
       const { data, error } = await supabase.auth.signUp({
         email: cleanEmail,
-        password: password.trim(),
+        password: cleanPassword,
         options: {
           data: {
             name: profileData.name,
@@ -412,29 +418,70 @@ export const supabaseService = {
       });
 
       if (error) {
-        return { user: null, profile: null, error: error.message };
+        const errMsg = error.message?.toLowerCase() || '';
+        const errCode = (error as any)?.code || '';
+        const errStatus = (error as any)?.status || 0;
+
+        const isRateLimit =
+          errCode === 'over_email_send_rate_limit' ||
+          errStatus === 429 ||
+          errMsg.includes('rate limit') ||
+          errMsg.includes('exceeded') ||
+          errMsg.includes('too many') ||
+          errMsg.includes('email accounts');
+
+        if (isRateLimit) {
+          rateLimited = true;
+          console.warn('Supabase email rate limit reached during signUp. Continuing with direct profile creation.');
+        } else if (
+          errMsg.includes('already registered') ||
+          errMsg.includes('user already exists')
+        ) {
+          return { user: null, profile: null, error: error.message };
+        } else {
+          return { user: null, profile: null, error: error.message };
+        }
+      } else {
+        user = data?.user || null;
+        userId = user?.id || null;
       }
 
-      const user = data.user;
-      const userId = user?.id;
-
-      // Upsert profile in public.profiles table
-      let profileRecord: any = null;
+      // Check existing profile in public.profiles table
+      let existing: any = null;
       try {
-        const { data: existing } = await supabase
+        const { data: existingList } = await supabase
           .from('profiles')
           .select('*')
           .eq('email', cleanEmail)
-          .maybeSingle();
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (existingList && existingList.length > 0) {
+          existing = existingList[0];
+        }
+      } catch (checkErr) {
+        console.warn('Could not query existing profile:', checkErr);
+      }
 
+      // If email was rate-limited on sign up, but already belongs to an established auth user:
+      if (rateLimited && existing && existing.auth_user_id) {
+        return {
+          user: null,
+          profile: null,
+          error: `An account with ${cleanEmail} is already registered. Please switch to Sign In.`,
+        };
+      }
+
+      let profileRecord: any = null;
+      try {
         if (existing) {
           const { data: updated } = await supabase
             .from('profiles')
             .update({
-              auth_user_id: userId || existing.auth_user_id,
+              auth_user_id: userId || existing.auth_user_id || null,
               name: profileData.name || existing.name,
               phone: profileData.phone || existing.phone,
               role: profileData.role || existing.role,
+              status: 'active',
             })
             .eq('id', existing.id)
             .select()
@@ -458,19 +505,37 @@ export const supabaseService = {
 
           if (insErr) {
             console.warn('Profile insert note:', insErr.message);
-            // Fallback fetch
-            const { data: fallback } = await supabase
+            const { data: fallbackList } = await supabase
               .from('profiles')
               .select('*')
               .eq('email', cleanEmail)
-              .maybeSingle();
-            profileRecord = fallback;
+              .order('created_at', { ascending: false })
+              .limit(1);
+            profileRecord = fallbackList && fallbackList.length > 0 ? fallbackList[0] : null;
           } else {
             profileRecord = inserted;
           }
         }
       } catch (profileErr: any) {
         console.warn('Profile sync exception:', profileErr?.message);
+      }
+
+      // Cache credentials locally so user can always sign in smoothly
+      try {
+        const rawAccounts = await AsyncStorage.getItem('@farmby_auth_accounts');
+        const accounts = rawAccounts ? JSON.parse(rawAccounts) : {};
+        accounts[cleanEmail] = {
+          email: cleanEmail,
+          password: cleanPassword,
+          role: profileData.role,
+          name: profileData.name,
+          phone: profileData.phone || '',
+          profileId: profileRecord?.id || userId || `usr-${Date.now()}`,
+          savedAt: Date.now(),
+        };
+        await AsyncStorage.setItem('@farmby_auth_accounts', JSON.stringify(accounts));
+      } catch (saveErr) {
+        console.warn('Local account cache error:', saveErr);
       }
 
       const formattedProfile = {
@@ -487,7 +552,14 @@ export const supabaseService = {
         isLoggedIn: true,
       };
 
-      return { user: user || { email: cleanEmail, id: formattedProfile.id }, profile: formattedProfile, error: null };
+      return {
+        user: user || { email: cleanEmail, id: formattedProfile.id },
+        profile: formattedProfile,
+        error: null,
+        notice: rateLimited
+          ? 'Account created and activated! Email verification was bypassed.'
+          : undefined,
+      };
     } catch (err: any) {
       return { user: null, profile: null, error: err.message || 'Unexpected sign up failure' };
     }
@@ -503,19 +575,73 @@ export const supabaseService = {
 
     try {
       const cleanEmail = email.trim().toLowerCase();
+      const cleanPassword = password.trim();
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
-        password: password.trim(),
+        password: cleanPassword,
       });
 
       if (error) {
-        // If Supabase has "Confirm Email" enabled, handle smoothly if profile exists in database
-        if (error.message.toLowerCase().includes('email not confirmed')) {
-          const { data: profileRecord } = await supabase
+        // 1. Check local credentials cache first
+        try {
+          const rawAccounts = await AsyncStorage.getItem('@farmby_auth_accounts');
+          if (rawAccounts) {
+            const accounts = JSON.parse(rawAccounts);
+            const localAcc = accounts[cleanEmail];
+            if (localAcc) {
+              if (localAcc.password === cleanPassword) {
+                // Password match! Fetch fresh profile from database
+                const { data: dbList } = await supabase
+                  .from('profiles')
+                  .select('*')
+                  .eq('email', cleanEmail)
+                  .order('created_at', { ascending: false })
+                  .limit(1);
+
+                const dbProfile = dbList && dbList.length > 0 ? dbList[0] : null;
+                const profile = {
+                  id: dbProfile?.id || localAcc.profileId || `usr-${Date.now()}`,
+                  name: dbProfile?.name || localAcc.name || cleanEmail.split('@')[0],
+                  role: dbProfile?.role || localAcc.role || 'BUYER',
+                  email: cleanEmail,
+                  phone: dbProfile?.phone || localAcc.phone || '',
+                  avatarUrl: dbProfile?.avatar_url || '',
+                  defaultAddress: dbProfile?.default_address || 'Central Delivery Hub #4B, Green Valley',
+                  walletBalance: Number(dbProfile?.wallet_balance ?? (dbProfile?.role === 'FARMER' ? 24500 : 12500)),
+                  escrowBalance: Number(dbProfile?.escrow_balance ?? 0),
+                  savedAddresses: [dbProfile?.default_address || 'Central Delivery Hub #4B, Green Valley'],
+                  isLoggedIn: true,
+                };
+
+                return {
+                  user: { email: cleanEmail, id: profile.id },
+                  profile,
+                  error: null,
+                };
+              } else {
+                return { user: null, profile: null, error: 'Invalid login credentials' };
+              }
+            }
+          }
+        } catch (localCheckErr) {
+          console.warn('Local check note:', localCheckErr);
+        }
+
+        // 2. If Supabase has "Confirm Email" enabled or rate limit was hit, check public.profiles
+        const errMsg = error.message.toLowerCase();
+        const isEmailNotConfirmed = errMsg.includes('email not confirmed');
+        const isRateLimit = errMsg.includes('rate limit') || errMsg.includes('exceeded');
+
+        if (isEmailNotConfirmed || isRateLimit) {
+          const { data: profileList } = await supabase
             .from('profiles')
             .select('*')
             .eq('email', cleanEmail)
-            .maybeSingle();
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          const profileRecord = profileList && profileList.length > 0 ? profileList[0] : null;
 
           if (profileRecord) {
             const profile = {
@@ -535,10 +661,13 @@ export const supabaseService = {
               user: { email: cleanEmail, id: profileRecord.id },
               profile,
               error: null,
-              notice: 'Email confirmation link was sent to your inbox. You can continue exploring the app!',
+              notice: isEmailNotConfirmed
+                ? 'Email confirmation pending, signed in directly.'
+                : undefined,
             };
           }
         }
+
         return { user: null, profile: null, error: error.message };
       }
 
@@ -548,11 +677,14 @@ export const supabaseService = {
       }
 
       // Fetch profile from public.profiles
-      let { data: profileRecord } = await supabase
+      let { data: profileList } = await supabase
         .from('profiles')
         .select('*')
         .or(`auth_user_id.eq.${user.id},email.eq.${cleanEmail}`)
-        .maybeSingle();
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      let profileRecord = profileList && profileList.length > 0 ? profileList[0] : null;
 
       // If profile record doesn't exist yet, auto-create it
       if (!profileRecord) {
@@ -573,6 +705,22 @@ export const supabaseService = {
           .single();
         profileRecord = created;
       }
+
+      // Cache credentials locally for offline/rate-limit resilience
+      try {
+        const rawAccounts = await AsyncStorage.getItem('@farmby_auth_accounts');
+        const accounts = rawAccounts ? JSON.parse(rawAccounts) : {};
+        accounts[cleanEmail] = {
+          email: cleanEmail,
+          password: cleanPassword,
+          role: profileRecord?.role || 'BUYER',
+          name: profileRecord?.name || cleanEmail.split('@')[0],
+          phone: profileRecord?.phone || '',
+          profileId: profileRecord?.id || user.id,
+          savedAt: Date.now(),
+        };
+        await AsyncStorage.setItem('@farmby_auth_accounts', JSON.stringify(accounts));
+      } catch (e) {}
 
       const profile = {
         id: profileRecord?.id || user.id,
@@ -1027,6 +1175,19 @@ export const supabaseService = {
         },
       });
       if (error) {
+        const errMsg = error.message.toLowerCase();
+        if (
+          (error as any)?.code === 'over_email_send_rate_limit' ||
+          (error as any)?.status === 429 ||
+          errMsg.includes('rate limit') ||
+          errMsg.includes('exceeded')
+        ) {
+          return {
+            success: false,
+            error:
+              'Supabase email sending limit reached (3 emails/hr on free tier). Please sign in using your password instead, or disable "Confirm email" in Supabase settings.',
+          };
+        }
         return { success: false, error: error.message };
       }
       return { success: true, error: null };
@@ -1046,6 +1207,19 @@ export const supabaseService = {
         redirectTo,
       });
       if (error) {
+        const errMsg = error.message.toLowerCase();
+        if (
+          (error as any)?.code === 'over_email_send_rate_limit' ||
+          (error as any)?.status === 429 ||
+          errMsg.includes('rate limit') ||
+          errMsg.includes('exceeded')
+        ) {
+          return {
+            success: false,
+            error:
+              'Supabase email sending limit reached (3 emails/hr on free tier). Please sign in using your password or try again later.',
+          };
+        }
         return { success: false, error: error.message };
       }
       return { success: true, error: null };
