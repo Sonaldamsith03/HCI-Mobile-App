@@ -93,21 +93,45 @@ export const ChatConversationScreen: React.FC = () => {
   };
 
   const scrollViewRef = useRef<ScrollView>(null);
+  const [isPartnerTyping, setIsPartnerTyping] = useState(false);
+  const typingTimerRef = useRef<any>(null);
 
   // Subscribe to real-time updates for this conversation
   useEffect(() => {
-    const unsubscribe = chatService.subscribeToConversation(conversationId, msgs => {
-      setConversation(msgs);
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    });
+    const unsubscribe = chatService.subscribeToConversation(
+      conversationId,
+      msgs => {
+        setConversation(msgs);
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      },
+      typingInfo => {
+        if (typingInfo.sender !== currentSenderRole) {
+          setIsPartnerTyping(typingInfo.isTyping);
+        }
+      }
+    );
 
-    return unsubscribe;
-  }, [conversationId]);
+    return () => {
+      unsubscribe();
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    };
+  }, [conversationId, currentSenderRole]);
+
+  const handleInputChange = (text: string) => {
+    setInputText(text);
+    chatService.sendTypingStatus(conversationId, currentSenderRole, true);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      chatService.sendTypingStatus(conversationId, currentSenderRole, false);
+    }, 1500);
+  };
 
   const handleSendText = () => {
     if (!inputText.trim()) return;
+    chatService.sendTypingStatus(conversationId, currentSenderRole, false);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     chatService.sendMessage(
       conversationId,
       farmerName,
@@ -558,13 +582,27 @@ export const ChatConversationScreen: React.FC = () => {
           </ScrollView>
         </View>
 
+        {/* Live Partner Typing Indicator */}
+        {isPartnerTyping && (
+          <View style={[styles.typingBar, isDark ? styles.typingBarDark : styles.typingBarLight]}>
+            <View style={styles.typingDotBox}>
+              <View style={styles.typingDotSmall} />
+              <View style={[styles.typingDotSmall, { marginHorizontal: 3 }]} />
+              <View style={styles.typingDotSmall} />
+            </View>
+            <Text style={[styles.typingText, isDark && styles.textMuted]}>
+              {partnerName} is typing...
+            </Text>
+          </View>
+        )}
+
         {/* Bottom Input Bar */}
         <View style={[styles.bottomInputBar, isDark ? styles.borderDark : styles.borderLight]}>
           <TextInput
             placeholder={`Message ${partnerName}...`}
             placeholderTextColor={isDark ? '#9CA3AF' : '#8E8E93'}
             value={inputText}
-            onChangeText={setInputText}
+            onChangeText={handleInputChange}
             style={[styles.chatInput, isDark && styles.chatInputDark]}
             multiline
           />
@@ -1107,5 +1145,33 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontSize: 13,
     fontWeight: '600',
+  },
+  typingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  typingBarLight: {
+    backgroundColor: '#F3F4F6',
+  },
+  typingBarDark: {
+    backgroundColor: '#1F2937',
+  },
+  typingDotBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  typingDotSmall: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  typingText: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    color: '#6B7280',
   },
 });

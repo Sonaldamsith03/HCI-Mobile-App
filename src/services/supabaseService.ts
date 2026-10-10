@@ -1421,6 +1421,25 @@ export const supabaseService = {
   },
 
   // ── Cloud Messages & Chat Integration ────────────────────────────────────
+  async fetchAllMessages(): Promise<any[] | null> {
+    if (!isSupabaseConfigured()) return null;
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.warn('Supabase fetchAllMessages error:', error.message);
+        return null;
+      }
+      return data || [];
+    } catch (err) {
+      console.warn('Supabase fetchAllMessages failed:', err);
+      return null;
+    }
+  },
+
   async fetchMessages(conversationId: string): Promise<any[] | null> {
     if (!isSupabaseConfigured()) return null;
     try {
@@ -1479,8 +1498,16 @@ export const supabaseService = {
 
   subscribeToMessages(conversationId: string, onUpdate: (payload: any) => void) {
     if (!isSupabaseConfigured()) return () => {};
+    const cleanId = conversationId.replace(/[^a-zA-Z0-9_-]/g, '_');
     const channel = supabase
-      .channel(`realtime:messages:${conversationId}`)
+      .channel(`chat_room:${cleanId}`, {
+        config: { broadcast: { self: false } },
+      })
+      .on('broadcast', { event: 'new_message' }, payload => {
+        if (payload?.payload) {
+          onUpdate({ new: payload.payload });
+        }
+      })
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
@@ -1493,6 +1520,99 @@ export const supabaseService = {
     return () => {
       supabase.removeChannel(channel);
     };
+  },
+
+  getRealtimeChatChannel(
+    conversationId: string,
+    onMessage: (msg: any) => void,
+    onTyping?: (info: { sender: string; isTyping: boolean }) => void
+  ) {
+    if (!isSupabaseConfigured()) return null;
+    const cleanId = conversationId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const channel = supabase.channel(`chat_room:${cleanId}`, {
+      config: { broadcast: { self: false } },
+    });
+
+    channel
+      .on('broadcast', { event: 'new_message' }, payload => {
+        if (payload?.payload) {
+          onMessage(payload.payload);
+        }
+      })
+      .on('broadcast', { event: 'typing' }, payload => {
+        if (payload?.payload && onTyping) {
+          onTyping(payload.payload);
+        }
+      })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+        payload => {
+          if (payload?.new) {
+            onMessage(payload.new);
+          }
+        }
+      )
+      .subscribe();
+
+    return channel;
+  },
+
+  getGlobalChatChannel(onMessage: (msg: any) => void) {
+    if (!isSupabaseConfigured()) return null;
+    const channel = supabase.channel('chat_room:global', {
+      config: { broadcast: { self: false } },
+    });
+
+    channel
+      .on('broadcast', { event: 'new_message' }, payload => {
+        if (payload?.payload) {
+          onMessage(payload.payload);
+        }
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+        if (payload?.new) {
+          onMessage(payload.new);
+        }
+      })
+      .subscribe();
+
+    return channel;
+  },
+
+  async broadcastChatMessage(channel: any, message: any): Promise<void> {
+    if (!channel) return;
+    try {
+      await channel.send({
+        type: 'broadcast',
+        event: 'new_message',
+        payload: message,
+      });
+    } catch (err) {
+      console.warn('Broadcast chat message error:', err);
+    }
+  },
+
+  async broadcastTyping(channel: any, sender: string, isTyping: boolean): Promise<void> {
+    if (!channel) return;
+    try {
+      await channel.send({
+        type: 'broadcast',
+        event: 'typing',
+        payload: { sender, isTyping },
+      });
+    } catch {
+      // silent
+    }
+  },
+
+  removeRealtimeChannel(channel: any) {
+    if (!channel) return;
+    try {
+      supabase.removeChannel(channel);
+    } catch {
+      // silent
+    }
   },
 
   subscribeToProduce(onUpdate: (payload: any) => void) {
